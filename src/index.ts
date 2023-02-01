@@ -183,10 +183,16 @@ interface PathOpts {
   linkTarget?: Path
 }
 export class Path implements PathOpts {
+  // TODO: cache resolves from this path
   basename: string
+  matchName: string
   fullpath?: string
   type: number
+  nocase: boolean
+  root: Path
+  roots: { [k: string]: Path }
   parent?: Path
+  // TODO: test replacing linked list with Path[], indexes with numbers
   chead?: Path
   ctail?: Path
   phead?: Path
@@ -196,11 +202,133 @@ export class Path implements PathOpts {
   constructor(
     basename: string,
     type: number = UNKNOWN,
-    opts: PathOpts = {}
+    root: Path,
+    roots: { [k: string]: Path },
+    nocase: boolean,
+    opts: PathOpts
   ) {
     this.basename = basename
+    this.matchName = nocase ? basename.toLowerCase() : basename
     this.type = type & TYPEMASK
+    this.nocase = nocase
+    this.roots = roots
+    this.root = root
     Object.assign(this, opts)
+  }
+
+  // walk down to a single path, and return the final Path object created
+  resolve(path?: string): Path {
+    if (!path) {
+      return this
+    }
+    const rootPath = isWindows
+      ? parse(path).root
+      : path.startsWith('/')
+      ? '/'
+      : ''
+    const dir = path.substring(rootPath.length)
+    const dirParts = dir.split(splitSep)
+    if (rootPath) {
+      let root =
+        this.roots[rootPath] ||
+        (this.sameRoot(rootPath)
+          ? (this.roots[rootPath] = this.root)
+          : new PathWalker(rootPath, this).root)
+      this.roots[rootPath] = root
+      return root.resolveParts(dirParts)
+    } else {
+      return this.resolveParts(dirParts)
+    }
+  }
+
+  resolveParts(dirParts: string[]) {
+    let p: Path = this
+    for (const part of dirParts) {
+      p = p.child(part)
+    }
+    return p
+  }
+
+  newChild(name: string, type: number = UNKNOWN, opts: PathOpts = {}) {
+    return new Path(name, type, this.root, this.roots, this.nocase, opts)
+  }
+
+  child(pathPart: string): Path {
+    if (pathPart === '' || pathPart === '.') {
+      return this
+    }
+    if (pathPart === '..') {
+      return this.parent || this
+    }
+
+    // find the child
+    const { chead, ctail, phead } = this
+    const name = this.nocase ? pathPart.toLowerCase() : pathPart
+    for (let p = chead; p; p = p.next) {
+      const v = p.matchName
+      if (v === name) {
+        return p
+      }
+      if (p === ctail) {
+        break
+      }
+    }
+
+    // didn't find it, create provisional child, since it might not
+    // actually exist.  If we know the parent isn't a dir, then
+    // in fact it CAN'T exist.
+    const s = this.parent ? sep : ''
+    const fullpath = this.fullpath
+      ? this.fullpath + s + pathPart
+      : undefined
+    const pchild = this.newChild(pathPart, UNKNOWN, {
+      parent: this,
+      fullpath,
+    })
+    if (this.getType() & ENOCHILD) {
+      pchild.setType(ENOENT)
+    }
+
+    if (phead) {
+      if (ctail === undefined) {
+        throw new Error(
+          'have provisional children, but invalid children list'
+        )
+      }
+      // have provisional children already, just append
+      ctail.next = pchild
+      pchild.prev = ctail
+      this.ctail = pchild
+    } else if (ctail) {
+      // have children, just not provisional children
+      ctail.next = pchild
+      pchild.prev = ctail
+      Object.assign(this, { ctail: pchild, phead: pchild })
+    } else {
+      // first child, of any kind
+      Object.assign(this, {
+        chead: pchild,
+        ctail: pchild,
+        phead: pchild,
+      })
+    }
+    return pchild
+  }
+
+  sameRoot(rootPath: string): boolean {
+    if (!isWindows) {
+      // only one root, and it's always /
+      return true
+    }
+    rootPath = rootPath
+      .replace(/\\/g, '\\')
+      .replace(/\\\\\?\\([a-z]:)\\?$/, '$1:\\')
+    // windows can (rarely) have case-sensitive filesystem, but
+    // UNC and drive letters are always case-insensitive
+    if (rootPath.toUpperCase() === this.root.basename.toUpperCase()) {
+      return true
+    }
+    return false
   }
 
   getType(): number {
@@ -294,16 +422,17 @@ export class PathWalker {
     if (existing) {
       this.root = existing
     } else {
-      this.root = new Path(this.rootPath, IFDIR)
+      this.root = this.newPath(this.rootPath, IFDIR)
       this.roots[this.rootPath] = this.root
     }
     let prev: Path = this.root
     for (const part of split) {
-      prev = this.child(prev, part)
+      prev = prev.child(part)
     }
     this.cwd = prev
   }
 
+  // same as require('path').resolve
   resolve(...paths: string[]): string {
     // first figure out the minimum number of paths we have to test
     // we always start at cwd, but any absolutes will bump the start
@@ -312,134 +441,14 @@ export class PathWalker {
       const p = paths[i]
       if (!p || p === '.') continue
       r = `${r}/${p}`
-      if (p.startsWith('/') || isWindows && (
-        p.startsWith('\\') || /^[a-z]:(\/|\\)/i.test(p))) {
+      if (
+        p.startsWith('/') ||
+        (isWindows && (p.startsWith('\\') || /^[a-z]:(\/|\\)/i.test(p)))
+      ) {
         break
       }
     }
-    return this.fullpath(this.resolveObj(this.cwd, r))
-  }
-
-  // if path is absolute on a diff root, return
-  // new PathWalker(path, this).cwd to store paths in the same store
-  //
-  // if absolute on the same root, walk from the root
-  //
-  // otherwise, walk it from this.cwd, and return pointer to result
-  resolveObj(entry: Path, path?: string): Path {
-    if (!path) {
-      return entry
-    }
-    const rootPath = isWindows
-      ? parse(path).root
-      : path.startsWith('/')
-      ? '/'
-      : ''
-    const dir = path.substring(rootPath.length)
-    const dirParts = dir.split(splitSep)
-    if (rootPath) {
-      let root =
-        this.roots[rootPath] ||
-        (this.sameRoot(rootPath)
-          ? this.root
-          : new PathWalker(this.dirname(entry), this).root)
-      this.roots[rootPath] = root
-      return this.resolveParts(root, dirParts)
-    } else {
-      return this.resolveParts(entry, dirParts)
-    }
-  }
-
-  sameRoot(rootPath: string): boolean {
-    if (!isWindows) {
-      // only one root, and it's always /
-      return true
-    }
-    rootPath = rootPath
-      .replace(/\\/g, '\\')
-      .replace(/\\\\\?\\([a-z]:)\\?$/, '$1:\\')
-    // windows can (rarely) have case-sensitive filesystem, but
-    // UNC and drive letters are always case-insensitive
-    if (rootPath.toUpperCase() === this.rootPath.toUpperCase()) {
-      return true
-    }
-    return false
-  }
-
-  resolveParts(dir: Path, dirParts: string[]) {
-    let p: Path = dir
-    for (const part of dirParts) {
-      p = this.child(p, part)
-      if (!p) {
-        return dir
-      }
-    }
-    return p
-  }
-
-  child(parent: Path, pathPart: string): Path {
-    if (pathPart === '' || pathPart === '.') {
-      return parent
-    }
-    if (pathPart === '..') {
-      return this.parent(parent)
-    }
-
-    // find the child
-    const { chead, ctail, phead } = parent
-    for (let p = chead; p; p = p.next) {
-      const v = p.basename
-      if (this.matchName(v, pathPart)) {
-        return p
-      }
-      if (p === ctail) {
-        break
-      }
-    }
-
-    // didn't find it, create provisional child, since it might not
-    // actually exist.  If we know the parent it's a dir, then
-    // in fact it CAN'T exist.
-    const s = parent.parent ? sep : ''
-    const fullpath = parent.fullpath
-      ? parent.fullpath + s + pathPart
-      : undefined
-    const cached = fullpath && this.cache.get(fullpath)
-    if (cached) {
-      return cached
-    }
-    const pchild = new Path(pathPart, UNKNOWN, { parent, fullpath })
-    if (fullpath) {
-      this.cache.set(fullpath, pchild)
-    }
-    if (parent.getType() & ENOCHILD) {
-      pchild.setType(ENOENT)
-    }
-
-    if (phead) {
-      if (ctail === undefined) {
-        throw new Error(
-          'have provisional children, but invalid children list'
-        )
-      }
-      // have provisional children already, just append
-      ctail.next = pchild
-      pchild.prev = ctail
-      parent.ctail = pchild
-    } else if (ctail) {
-      // have children, just not provisional children
-      ctail.next = pchild
-      pchild.prev = ctail
-      Object.assign(parent, { ctail: pchild, phead: pchild })
-    } else {
-      // first child, of any kind
-      Object.assign(parent, {
-        chead: pchild,
-        ctail: pchild,
-        phead: pchild,
-      })
-    }
-    return pchild
+    return this.fullpath(this.cwd.resolve(r))
   }
 
   parent(entry: Path): Path {
@@ -552,8 +561,7 @@ export class PathWalker {
   readdirMaybePromoteChild(entry: Path, e: Dirent): Path | undefined {
     const { phead } = entry
     for (let p = phead; p; p = (p as Path).next) {
-      const v = this.basename(p)
-      if (!this.matchName(v, e.name)) {
+      if (!this.matchName(p.matchName, e.name)) {
         continue
       }
 
@@ -603,12 +611,16 @@ export class PathWalker {
     return p
   }
 
+  newPath(name: string, type: number = UNKNOWN, opts: PathOpts = {}) {
+    return new Path(name, type, this.root, this.roots, this.nocase, opts)
+  }
+
   readdirAddNewChild(parent: Path, e: Dirent): Path {
     // alloc new entry at head, so it's never provisional
     const next = parent.chead
     const ctail = parent.ctail
     const type = entToType(e)
-    const child = new Path(e.name, type, { parent, next })
+    const child = this.newPath(e.name, type, { parent, next })
     if (next) next.prev = child
     parent.chead = child
     if (!ctail) parent.ctail = child
@@ -696,14 +708,8 @@ export class PathWalker {
     }
   }
 
-  matchName(a: string | undefined, b: string) {
-    return a === undefined
-      ? false
-      : this.nocase
-      ? a.toLowerCase() === b.toLowerCase()
-      : a === b
-    //console.error('MN', a, b, ret)
-    //return ret
+  matchName(a: string, b: string) {
+    return a === b || (this.nocase && a === b.toLowerCase())
   }
 
   // fills in the data we can gather, or returns undefined on error
@@ -773,7 +779,7 @@ export class PathWalker {
     /* c8 ignore stop */
     try {
       const read = await readlink(fp)
-      const linkTarget = this.resolveObj(p, read)
+      const linkTarget = p.resolve(read)
       if (linkTarget) {
         return (entry.linkTarget = linkTarget)
       }
@@ -814,7 +820,7 @@ export class PathWalker {
     /* c8 ignore stop */
     try {
       const read = readlinkSync(fp)
-      const linkTarget = this.resolveObj(p, read)
+      const linkTarget = p.resolve(read)
       if (linkTarget) {
         return (entry.linkTarget = linkTarget)
       }
