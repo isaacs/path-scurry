@@ -1,11 +1,22 @@
-import { resolve, sep } from 'path'
+// TODO: move most/all of this logic over to the Path class.
+// The PathWalker should operate on *strings*, and the Paths should
+// operate on *Paths*, should be a good blend of performance and
+// usability.
+// so PathWalker.dirname(str) => PathWalker.resolve(dir).dirname().fullpath
+//
+// TODO: pw.resolve() should ONLY take strings, throw away any relatives
+// that come before any absolutes, and cache the lookup
+//
+// TODO: replace the children linked list with an array of children,
+// but test perf because that might not be good.
+
+import LRUCache from 'lru-cache'
+import { parse, resolve, sep } from 'path'
 
 import { Dir, lstatSync, opendirSync, readlinkSync } from 'fs'
 import { lstat, opendir, readlink } from 'fs/promises'
 
 import { Dirent, Stats } from 'fs'
-import { parse } from 'path/posix'
-import { nullPointer, Pointer, PointerSet } from 'pointer-set'
 
 function* syncDirIterate(dir: Dir) {
   let e
@@ -101,6 +112,7 @@ const ENOENT = 0b0100_0000
 const ENOCHILD = ENOTDIR | ENOENT
 // set if we fail to readlink
 const ENOREADLINK = 0b1000_0000
+const TYPEMASK = 0b1111_1111
 
 const entToType = (s: Dirent | Stats) =>
   s.isFile()
@@ -119,42 +131,136 @@ const entToType = (s: Dirent | Stats) =>
     ? IFIFO
     : UNKNOWN
 
-const fields = [
-  'parent',
-  'chead',
-  'ctail',
-  'prev',
-  'next',
-  'phead',
-  'linkTarget',
-] as const
-const rawFields = ['type'] as const
+// TODO
+// Non-PointerSet approach:
+// each "Path" is:
+// {
+//   basename: string (no separators, just a single portion)
+//   fullpath?: string (cached resolve())
+//   type: number (uint32 of flags)
+//   parent?: Path
+//   chead?: Path
+//   ctail?: Path
+//   phead?: Path
+//   prev?: Path
+//   next?: Path
+//   linkTarget?: Path
+// }
+//
+// The PathWalker has a reference to the roots it's seen (which there will only
+// be one of on Posix systems, but on Windows could be any number), and all the
+// methods for operating on Path objects.
+//
+// The operations are essentially the same, but instead of taking a Pointer,
+// they receive a Path object, and instead of doing stuff like:
+// `this.store.ref(pointer, field, otherPointer)` it just does:
+// `path[field] = otherPath`.
+//
+// So we still do each operation exactly once, and a given resolved path string
+// always points to the same Path object. And hopefully, the GC won't be so
+// terrible, because the entire graph can be pruned at once.
+//
+// A next step, if gc IS an issue, is to try storing all the Path objects in an
+// array, and replacing the Path references to numeric indexes into that array.
+// Then each Path would only ever be referenced by the array, and as long as
+// none of them make it to old object generation, we should be good there.
 
-class Store extends PointerSet<string, typeof fields, typeof rawFields> {
-  constructor() {
-    super(fields, 256, rawFields)
+interface PathOpts {
+  fullpath?: string
+  parent?: Path
+  chead?: Path
+  ctail?: Path
+  phead?: Path
+  prev?: Path
+  next?: Path
+  linkTarget?: Path
+}
+export class Path implements PathOpts {
+  basename: string
+  fullpath?: string
+  type: number
+  parent?: Path
+  chead?: Path
+  ctail?: Path
+  phead?: Path
+  prev?: Path
+  next?: Path
+  linkTarget?: Path
+  constructor(
+    basename: string,
+    type: number = UNKNOWN,
+    opts: PathOpts = {}
+  ) {
+    this.basename = basename
+    this.type = type & TYPEMASK
+    Object.assign(this, opts)
+  }
+
+  getType(): number {
+    return this.type
+  }
+  setType(type: number): number {
+    return (this.type = type & TYPEMASK)
+  }
+  addType(type: number): number {
+    return (this.type |= type & TYPEMASK)
+  }
+
+  isUnknown(): boolean {
+    return (this.getType() && IFMT) === UNKNOWN
+  }
+  isFile(): boolean {
+    return (this.getType() & IFMT) === IFREG
+  }
+  // a directory, or a symlink to a directory
+  isDirectory(): boolean {
+    return (this.getType() & IFMT) === IFDIR
+  }
+  isCharacterDevice(): boolean {
+    return (this.getType() & IFMT) === IFCHR
+  }
+  isBlockDevice(): boolean {
+    return (this.getType() & IFMT) === IFBLK
+  }
+  isFIFO(): boolean {
+    return (this.getType() & IFMT) === IFIFO
+  }
+  isSocket(): boolean {
+    return (this.getType() & IFMT) === IFSOCK
+  }
+
+  // we know it is a symlink
+  isSymbolicLink(): boolean {
+    return (this.getType() & IFLNK) === IFLNK
   }
 }
 
 export interface PathWalkerOpts {
   nocase?: boolean
-  store?: Store
+  roots?: { [k: string]: Path }
+  cache?: LRUCache<string, Path>
 }
 
 export class PathWalker {
-  store: Store
-  root: Pointer
+  root: Path
   rootPath: string
-  cwd: Pointer
+  roots: { [k: string]: Path }
+  cwd: Path
   cwdPath: string
   nocase: boolean
+  cache: LRUCache<string, Path>
 
   constructor(
     cwd: string = process.cwd(),
-    { nocase = defNocase, store = new Store() }: PathWalkerOpts = {}
+    {
+      nocase = defNocase,
+      roots = Object.create(null),
+      cache = new LRUCache<string, Path>({ max: 256 }),
+    }: PathWalkerOpts = {}
   ) {
     this.nocase = nocase
-    this.store = store
+    this.cache = cache
+
     // resolve and split root, and then add to the store.
     // this is the only time we call path.resolve()
     const cwdPath = resolve(cwd)
@@ -169,18 +275,24 @@ export class PathWalker {
     } else {
       this.rootPath = '/'
     }
+
     const split = cwdPath.substring(this.rootPath.length).split(sep)
     // resolve('/') leaves '', splits to [''], we don't want that.
     if (split.length === 1 && !split[0]) {
       split.pop()
     }
     // we can safely assume the root is a directory.
-    this.root = this.store.alloc(this.rootPath, {}, { type: IFDIR })
-    let prev: Pointer = this.root
+    this.roots = roots
+    const existing = this.roots[this.rootPath]
+    if (existing) {
+      this.root = existing
+    } else {
+      this.root = new Path(this.rootPath, IFDIR)
+      this.roots[this.rootPath] = this.root
+    }
+    let prev: Path = this.root
     for (const part of split) {
-      prev = prev
-        ? this.child(prev, part)
-        : store.alloc(part, { parent: prev }, {})
+      prev = this.child(prev, part)
     }
     this.cwd = prev
   }
@@ -191,7 +303,9 @@ export class PathWalker {
   // if absolute on the same root, walk from the root
   //
   // otherwise, walk it from this.cwd, and return pointer to result
-  resolve(entry: Pointer | string, path?: string): Pointer | undefined {
+  resolve(path: string): Path
+  resolve(entry: Path, path?: string): Path
+  resolve(entry: Path | string, path?: string): Path {
     if (typeof entry === 'string') {
       path = entry
       entry = this.cwd
@@ -207,16 +321,13 @@ export class PathWalker {
     const dir = path.substring(rootPath.length)
     const dirParts = dir.split(splitSep)
     if (rootPath) {
-      const dir = this.dirname(entry)
-      if (!dir) {
-        return undefined
-      }
-      if (!this.sameRoot(rootPath)) {
-        const pw = new PathWalker(dir, this)
-        return pw.resolveParts(pw.root, dirParts)
-      } else {
-        return this.resolveParts(this.root, dirParts)
-      }
+      let root =
+        this.roots[rootPath] ||
+        (this.sameRoot(rootPath)
+          ? this.root
+          : new PathWalker(this.dirname(entry), this).root)
+      this.roots[rootPath] = root
+      return this.resolveParts(root, dirParts)
     } else {
       return this.resolveParts(entry, dirParts)
     }
@@ -238,8 +349,8 @@ export class PathWalker {
     return false
   }
 
-  resolveParts(dir: Pointer, dirParts: string[]): Pointer | undefined {
-    let p: Pointer = dir
+  resolveParts(dir: Path, dirParts: string[]) {
+    let p: Path = dir
     for (const part of dirParts) {
       p = this.child(p, part)
       if (!p) {
@@ -249,19 +360,18 @@ export class PathWalker {
     return p
   }
 
-  child(parent: Pointer, pathPart: string): Pointer {
+  child(parent: Path, pathPart: string): Path {
     if (pathPart === '' || pathPart === '.') {
       return parent
     }
     if (pathPart === '..') {
       return this.parent(parent)
     }
+
     // find the child
-    const chead = this.store.ref(parent, 'chead')
-    const ctail = this.store.ref(parent, 'ctail')
-    const phead = this.store.ref(parent, 'phead')
-    for (let p = chead; p; p = this.store.ref(p, 'next')) {
-      const v = this.store.value(p)
+    const { chead, ctail, phead } = parent
+    for (let p = chead; p; p = p.next) {
+      const v = p.basename
       if (this.matchName(v, pathPart)) {
         return p
       }
@@ -273,27 +383,40 @@ export class PathWalker {
     // didn't find it, create provisional child, since it might not
     // actually exist.  If we know the parent it's a dir, then
     // in fact it CAN'T exist.
-    const pchild = this.store.alloc(pathPart, { parent })
-    if (this.getType(parent) & ENOCHILD) {
-      this.addType(pchild, ENOENT)
+    const s = parent.parent ? sep : ''
+    const fullpath = parent.fullpath
+      ? parent.fullpath + s + pathPart
+      : undefined
+    const cached = fullpath && this.cache.get(fullpath)
+    if (cached) {
+      return cached
+    }
+    const pchild = new Path(pathPart, UNKNOWN, { parent, fullpath })
+    if (fullpath) {
+      this.cache.set(fullpath, pchild)
+    }
+    if (parent.getType() & ENOCHILD) {
+      pchild.setType(ENOENT)
     }
 
     if (phead) {
+      if (ctail === undefined) {
+        throw new Error(
+          'have provisional children, but invalid children list'
+        )
+      }
       // have provisional children already, just append
-      this.store.ref(ctail, 'next', pchild)
-      this.store.ref(pchild, 'prev', ctail)
-      this.store.ref(parent, 'ctail', pchild)
+      ctail.next = pchild
+      pchild.prev = ctail
+      parent.ctail = pchild
     } else if (ctail) {
       // have children, just not provisional children
-      this.store.ref(ctail, 'next', pchild)
-      this.store.ref(pchild, 'prev', ctail)
-      this.store.refAll(parent, {
-        ctail: pchild,
-        phead: pchild,
-      })
+      ctail.next = pchild
+      pchild.prev = ctail
+      Object.assign(parent, { ctail: pchild, phead: pchild })
     } else {
       // first child, of any kind
-      this.store.refAll(parent, {
+      Object.assign(parent, {
         chead: pchild,
         ctail: pchild,
         phead: pchild,
@@ -302,57 +425,46 @@ export class PathWalker {
     return pchild
   }
 
-  parent(entry: Pointer): Pointer {
+  parent(entry: Path): Path {
     // parentless entries are root path entries.
-    return this.store.ref(entry, 'parent') || entry
+    return entry.parent || entry
   }
 
   // dirname/basename/fullpath always within a given PW, so we know
   // that the only thing that can be parentless is the root, unless
   // something is deeply wrong.
-  basename(entry: Pointer = this.cwd): string | undefined {
-    const v = this.store.value(entry)
-    return v === undefined ? undefined : v
+  basename(entry: Path = this.cwd): string {
+    return entry.basename
   }
 
-  fullpath(entry: Pointer = this.cwd): string | undefined {
+  fullpath(entry: Path = this.cwd): string {
+    if (entry.fullpath) {
+      return entry.fullpath
+    }
     const basename = this.basename(entry)
-    if (basename === undefined) {
-      return undefined
-    }
-    if (entry === this.root) {
-      return basename
-    }
-    const p = this.store.ref(entry, 'parent')
+    const p = entry.parent
     if (!p) {
-      return undefined
+      return (entry.fullpath = entry.basename)
     }
     const pv = this.fullpath(p)
-    return pv + (p === this.root ? '' : '/') + basename
+    const fp = pv + (!p.parent ? '' : '/') + basename
+    return (entry.fullpath = fp)
   }
 
-  dirname(entry: Pointer = this.cwd): string | void {
-    if (entry === this.root) {
-      return this.basename(entry)
-    }
-    const p = this.store.ref(entry, 'parent')
-    return p === nullPointer ? undefined : this.fullpath(p)
+  dirname(entry: Path = this.cwd): string {
+    return !entry.parent
+      ? this.basename(entry)
+      : this.fullpath(entry.parent)
   }
 
-  calledReaddir(p: Pointer): boolean {
-    return (this.getType(p) & READDIR_CALLED) === READDIR_CALLED
+  calledReaddir(p: Path): boolean {
+    return (p.getType() & READDIR_CALLED) === READDIR_CALLED
   }
 
-  *cachedReaddir(entry: Pointer): Iterable<Pointer> {
-    const chead = this.store.ref(entry, 'chead')
-    const ctail = this.store.ref(entry, 'ctail')
-    const phead = this.store.ref(entry, 'phead')
+  *cachedReaddir(entry: Path): Iterable<Path> {
+    const { chead, ctail, phead } = entry
     while (true) {
-      for (
-        let c = chead;
-        c && c !== phead;
-        c = this.store.ref(c, 'next')
-      ) {
+      for (let c = chead; c && c !== phead; c = c.next) {
         yield c
         if (c === ctail) {
           break
@@ -362,19 +474,9 @@ export class PathWalker {
     }
   }
 
-  // XXX need a way to do "provisional children", which _might_ exist,
-  // but we don't know yet.  So that if you resolve to ('./x/y/z')
-  // and then readdir there, we track the path from cwd to x/y/z,
-  // without assuming we know ALL the entries.
-  // maybe store a flag specifically on the 'type' field?
-  // then, when creating a known child here, we can re-use any existing
-  // provisional children, so readding the dir in any part of the walk
-  // will fill in the provisionals that exist, and mark them as no longer
-  // provisional.
-  //
   // asynchronous iterator for dir entries
-  async *readdir(entry: Pointer = this.cwd): AsyncIterable<Pointer> {
-    const t = this.getType(entry)
+  async *readdir(entry: Path = this.cwd): AsyncIterable<Path> {
+    const t = entry.getType()
     if ((t & ENOCHILD) !== 0) {
       return
     }
@@ -405,19 +507,17 @@ export class PathWalker {
       } else {
         // all refs must be considered provisional, since it did not
         // complete.
-        this.store.ref(entry, 'phead', this.store.ref(entry, 'chead'))
+        entry.phead = entry.chead
       }
     }
   }
 
-  readdirSuccess(entry: Pointer) {
+  readdirSuccess(entry: Path) {
     // succeeded, mark readdir called bit
-    const type = this.getType(entry)
-    this.store.raw(entry, 'type', type | READDIR_CALLED)
+    entry.addType(READDIR_CALLED)
     // mark all remaining provisional children as ENOENT
-    const phead = this.store.ref(entry, 'phead')
-    const ctail = this.store.ref(entry, 'ctail')
-    for (let p = phead; p; p = this.store.ref(p, 'next')) {
+    const { phead, ctail } = entry
+    for (let p = phead; p; p = p.next) {
       this.markENOENT(p)
       if (p === ctail) {
         break
@@ -425,20 +525,17 @@ export class PathWalker {
     }
   }
 
-  readdirAddChild(entry: Pointer, e: Dirent) {
+  readdirAddChild(entry: Path, e: Dirent) {
     return (
       this.readdirMaybePromoteChild(entry, e) ||
       this.readdirAddNewChild(entry, e)
     )
   }
 
-  readdirMaybePromoteChild(
-    entry: Pointer,
-    e: Dirent
-  ): Pointer | undefined {
-    const phead = this.store.ref(entry, 'phead')
-    for (let p = phead; p; p = this.store.ref(p, 'next')) {
-      const v = this.store.value(p)
+  readdirMaybePromoteChild(entry: Path, e: Dirent): Path | undefined {
+    const { phead } = entry
+    for (let p = phead; p; p = (p as Path).next) {
+      const v = this.basename(p)
       if (!this.matchName(v, e.name)) {
         continue
       }
@@ -447,56 +544,61 @@ export class PathWalker {
     }
   }
 
-  readdirPromoteChild(entry: Pointer, e: Dirent, p: Pointer): Pointer {
-    const phead = this.store.ref(entry, 'phead')
-    const v = this.store.value(p)
+  readdirPromoteChild(entry: Path, e: Dirent, p: Path): Path {
+    const phead = entry.phead
+    const v = this.basename(p)
     const type = entToType(e)
-    const ctail = this.store.ref(entry, 'ctail')
-    const chead = this.store.ref(entry, 'chead')
-    this.setType(p, type)
-    if (v !== e.name) this.store.value(p, e.name)
+    const ctail = entry.ctail
+    const chead = entry.chead
+    /* c8 ignore start */
+    if (!chead || !ctail || !phead) {
+      throw new Error('cannot promote, no provisional entries')
+    }
+    /* c8 ignore stop */
+
+    p.setType(type)
+    // case sensitivity fixing when we learn the true name.
+    if (v !== e.name) p.basename = e.name
 
     if (p === phead) {
       // just advance phead (potentially off the list)
-      this.store.ref(entry, 'phead', this.store.ref(phead, 'next'))
+      entry.phead = phead.next
     } else {
       // move to head of list
-      const prev = this.store.ref(p, 'prev')
-      const next = this.store.ref(p, 'next')
+      const { prev, next } = p
+      /* c8 ignore start */
+      if (!prev) {
+        throw new Error('non-head Path node has no previous entry')
+      }
 
       // if p was at the end of the list, move back tail
       // otherwise, next.prev = prev
-      if (p === ctail) this.store.ref(entry, 'ctail', prev)
-      else this.store.ref(next, 'prev', prev)
+      if (p === ctail) entry.ctail = prev
+      else if (next) next.prev = prev
 
       // prev.next points p's next (possibly null)
-      this.store.ref(prev, 'next', next)
-      this.store.ref(p, 'next', phead)
-
-      this.store.ref(chead, 'prev', p)
-      this.store.ref(p, 'next', chead)
-      this.store.ref(entry, 'chead', p)
+      prev.next = next
+      // move p to chead
+      chead.prev = p
+      p.next = chead
+      entry.chead = p
     }
     return p
   }
 
-  readdirAddNewChild(parent: Pointer, e: Dirent): Pointer {
+  readdirAddNewChild(parent: Path, e: Dirent): Path {
     // alloc new entry at head, so it's never provisional
-    const next = this.store.ref(parent, 'chead')
-    const ctail = this.store.ref(parent, 'ctail')
+    const next = parent.chead
+    const ctail = parent.ctail
     const type = entToType(e)
-    const ref = {
-      parent,
-      next,
-    }
-    const child = this.store.alloc(e.name, ref, { type })
-    if (next) this.store.ref(next, 'prev', child)
-    this.store.ref(parent, 'chead', child)
-    if (!ctail) this.store.ref(parent, 'ctail', child)
+    const child = new Path(e.name, type, { parent, next })
+    if (next) next.prev = child
+    parent.chead = child
+    if (!ctail) parent.ctail = child
     return child
   }
 
-  readdirFail(entry: Pointer, er: NodeJS.ErrnoException) {
+  readdirFail(entry: Path, er: NodeJS.ErrnoException) {
     if (er.code === 'ENOTDIR' || er.code === 'EPERM') {
       this.markENOTDIR(entry)
     }
@@ -506,34 +608,34 @@ export class PathWalker {
   }
 
   // save the information when we know the entry is not a dir
-  markENOTDIR(entry: Pointer) {
+  markENOTDIR(entry: Path) {
     // entry is not a directory, so any children can't exist.
     // unmark IFDIR, mark ENOTDIR
-    let t = this.getType(entry)
+    let t = entry.getType()
     // if it's already marked ENOTDIR, bail
     if (t & ENOTDIR) return
     // this could happen if we stat a dir, then delete it,
     // then try to read it or one of its children.
     if ((t & IFDIR) === IFDIR) t &= IFMT_UNKNOWN
-    this.setType(entry, t | ENOTDIR)
+    entry.setType(t | ENOTDIR)
     this.markChildrenENOENT(entry)
   }
 
-  markENOENT(entry: Pointer) {
+  markENOENT(entry: Path) {
     // mark as UNKNOWN and ENOENT
-    const t = this.getType(entry)
+    const t = entry.getType()
     if (t & ENOENT) return
-    this.setType(entry, (t | ENOENT) & IFMT_UNKNOWN)
+    entry.setType((t | ENOENT) & IFMT_UNKNOWN)
     this.markChildrenENOENT(entry)
   }
 
-  markChildrenENOENT(entry: Pointer) {
-    const h = this.store.ref(entry, 'chead')
+  markChildrenENOENT(entry: Path) {
+    const h = entry.chead
     // all children are provisional
-    this.store.ref(entry, 'phead', h)
-    const t = this.store.ref(entry, 'ctail')
+    entry.phead = h
+    const t = entry.ctail
     // all children do not exist
-    for (let p = h; p; p = this.store.ref(p, 'next')) {
+    for (let p = h; p; p = p.next) {
       this.markENOENT(p)
       if (p === t) {
         break
@@ -541,8 +643,8 @@ export class PathWalker {
     }
   }
 
-  *readdirSync(entry: Pointer = this.cwd): Iterable<Pointer> {
-    const t = this.getType(entry)
+  *readdirSync(entry: Path = this.cwd): Iterable<Path> {
+    const t = entry.getType()
     if ((t & ENOCHILD) !== 0) {
       return
     }
@@ -572,54 +674,53 @@ export class PathWalker {
         this.readdirSuccess(entry)
       } else {
         // all refs must be considered provisional now, since it failed.
-        this.store.ref(entry, 'phead', this.store.ref(entry, 'chead'))
+        entry.phead = entry.chead
       }
     }
   }
 
   matchName(a: string | undefined, b: string) {
-    const ret =
-      a === undefined
-        ? false
-        : this.nocase
-        ? a.toLowerCase() === b.toLowerCase()
-        : a === b
-    console.error('MN', a, b, ret)
-    return ret
+    return a === undefined
+      ? false
+      : this.nocase
+      ? a.toLowerCase() === b.toLowerCase()
+      : a === b
+    //console.error('MN', a, b, ret)
+    //return ret
   }
 
   // fills in the data we can gather, or returns undefined on error
-  async lstat(entry: Pointer = this.cwd): Promise<Pointer | undefined> {
-    const t = this.getType(entry)
+  async lstat(entry: Path = this.cwd): Promise<Path | undefined> {
+    const t = entry.getType()
     if (t & ENOENT) {
       return
     }
     try {
       const path = this.fullpath(entry)
       if (!path) return
-      this.setType(entry, entToType(await lstat(path)))
+      entry.setType(entToType(await lstat(path)))
       return entry
     } catch (er) {
       this.lstatFail(entry, er as NodeJS.ErrnoException)
     }
   }
 
-  lstatSync(entry: Pointer = this.cwd): Pointer | undefined {
-    const t = this.getType(entry)
+  lstatSync(entry: Path = this.cwd): Path | undefined {
+    const t = entry.getType()
     if (t & ENOENT) {
       return
     }
     try {
       const path = this.fullpath(entry)
       if (!path) return
-      this.setType(entry, entToType(lstatSync(path)))
+      entry.setType(entToType(lstatSync(path)))
       return entry
     } catch (er) {
       this.lstatFail(entry, er as NodeJS.ErrnoException)
     }
   }
 
-  lstatFail(entry: Pointer, er: NodeJS.ErrnoException) {
+  lstatFail(entry: Path, er: NodeJS.ErrnoException) {
     if (er.code === 'ENOTDIR') {
       this.markENOTDIR(this.parent(entry))
     } else if (er.code === 'ENOENT') {
@@ -627,8 +728,8 @@ export class PathWalker {
     }
   }
 
-  cannotReadlink(entry: Pointer): boolean {
-    const t = this.getType(entry)
+  cannotReadlink(entry: Path): boolean {
+    const t = entry.getType()
     // cases where it cannot possibly succeed
     return (
       !!((t & IFMT) !== UNKNOWN && !(t & IFLNK)) ||
@@ -637,8 +738,8 @@ export class PathWalker {
     )
   }
 
-  async readlink(entry: Pointer): Promise<Pointer | undefined> {
-    const target = this.store.ref(entry, 'linkTarget')
+  async readlink(entry: Path): Promise<Path | undefined> {
+    const target = entry.linkTarget
     if (target) {
       return target
     }
@@ -657,7 +758,7 @@ export class PathWalker {
       const read = await readlink(fp)
       const linkTarget = this.resolve(p, read)
       if (linkTarget) {
-        return this.store.ref(entry, 'linkTarget', linkTarget)
+        return (entry.linkTarget = linkTarget)
       }
     } catch (er) {
       this.readlinkFail(entry, er as NodeJS.ErrnoException)
@@ -665,7 +766,7 @@ export class PathWalker {
     }
   }
 
-  readlinkFail(entry: Pointer, er: NodeJS.ErrnoException) {
+  readlinkFail(entry: Path, er: NodeJS.ErrnoException) {
     let ter: number = ENOREADLINK | (er.code === 'ENOENT' ? ENOENT : 0)
     if (er.code === 'EINVAL') {
       // exists, but not a symlink, we don't know WHAT it is, so remove
@@ -675,11 +776,11 @@ export class PathWalker {
     if (er.code === 'ENOTDIR') {
       this.markENOTDIR(this.parent(entry))
     }
-    this.addType(entry, ter)
+    entry.addType(ter)
   }
 
-  readlinkSync(entry: Pointer): Pointer | undefined {
-    const target = this.store.ref(entry, 'linkTarget')
+  readlinkSync(entry: Path): Path | undefined {
+    const target = entry.linkTarget
     if (target) {
       return target
     }
@@ -698,51 +799,11 @@ export class PathWalker {
       const read = readlinkSync(fp)
       const linkTarget = this.resolve(p, read)
       if (linkTarget) {
-        return this.store.ref(entry, 'linkTarget', linkTarget)
+        return (entry.linkTarget = linkTarget)
       }
     } catch (er) {
       this.readlinkFail(entry, er as NodeJS.ErrnoException)
       return undefined
     }
-  }
-
-  // type lookups
-  getType(entry: Pointer): number {
-    return this.store.raw8(entry, 'type')[0]
-  }
-  setType(entry: Pointer, type: number): void {
-    this.store.raw8(entry, 'type')[0] = type
-  }
-  addType(entry: Pointer, type: number): void {
-    const t = this.store.raw8(entry, 'type')
-    t[0] |= type
-  }
-
-  isUnknown(entry: Pointer): boolean {
-    return (this.getType(entry) && IFMT) === UNKNOWN
-  }
-  isFile(entry: Pointer): boolean {
-    return (this.getType(entry) & IFMT) === IFREG
-  }
-  // a directory, or a symlink to a directory
-  isDirectory(entry: Pointer): boolean {
-    return (this.getType(entry) & IFMT) === IFDIR
-  }
-  isCharacterDevice(entry: Pointer): boolean {
-    return (this.getType(entry) & IFMT) === IFCHR
-  }
-  isBlockDevice(entry: Pointer): boolean {
-    return (this.getType(entry) & IFMT) === IFBLK
-  }
-  isFIFO(entry: Pointer): boolean {
-    return (this.getType(entry) & IFMT) === IFIFO
-  }
-  isSocket(entry: Pointer): boolean {
-    return (this.getType(entry) & IFMT) === IFSOCK
-  }
-
-  // we know it is a symlink
-  isSymbolicLink(entry: Pointer): boolean {
-    return (this.getType(entry) & IFLNK) === IFLNK
   }
 }
