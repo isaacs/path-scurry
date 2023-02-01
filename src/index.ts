@@ -33,11 +33,14 @@ function* syncDirIterate(dir: Dir) {
 }
 
 // turn something like //?/c:/ into c:\
-const uncRegexp = /^\\\\\?\\([a-z]:)\\?$/
-const unUNCDrive = (rootPath: string): string =>
-  rootPath.replace(/\//g, '\\').replace(uncRegexp, '$1:\\')
+const uncDriveRegexp = /^\\\\\?\\([a-z]:)\\?$/
+const uncToDrive = (rootPath: string): string =>
+  rootPath.replace(/\//g, '\\').replace(uncDriveRegexp, '$1:\\')
 
-const driveCwd = (c: string) => c.match(/^([a-z]):(?:\\|\/|$)/)?.[1]
+// if it's a drive letter path, return the drive letter plus \
+// otherwise, return \
+const driveCwd = (c: string): string =>
+  (c.match(/^([a-z]):(?:\\|\/|$)/)?.[1] || '') + sep
 const eitherSep = /[\\\/]/
 
 // a PathWalker has a PointerSet with the following setup:
@@ -224,6 +227,14 @@ export class Path implements PathOpts {
     Object.assign(this, opts)
   }
 
+  getRootPath(path: string): string {
+    return this.isWindows
+      ? win32.parse(path).root
+      : path.startsWith('/')
+      ? '/'
+      : ''
+  }
+
   // walk down to a single path, and return the final Path object created
   resolve(path?: string): Path {
     if (!path) {
@@ -233,11 +244,7 @@ export class Path implements PathOpts {
     if (cached) {
       return cached
     }
-    const rootPath = this.isWindows
-      ? win32.parse(path).root
-      : path.startsWith('/')
-      ? '/'
-      : ''
+    const rootPath = this.getRootPath(path)
     const dir = path.substring(rootPath.length)
     const dirParts = dir.split(this.splitSep)
     let result: Path
@@ -429,16 +436,7 @@ class PathWalker {
     // this is the only time we call path.resolve()
     const cwdPath = (this.isWindows ? win32 : posix).resolve(cwd)
     this.cwdPath = cwdPath
-    if (this.isWindows) {
-      const rootPath = win32.parse(cwdPath).root
-      this.rootPath = unUNCDrive(rootPath)
-      if (this.rootPath === sep) {
-        const drive = driveCwd(win32.resolve(rootPath))
-        this.rootPath = drive + sep
-      }
-    } else {
-      this.rootPath = '/'
-    }
+    this.rootPath = this.parseRootPath(cwdPath)
 
     const split = cwdPath.substring(this.rootPath.length).split(sep)
     // resolve('/') leaves '', splits to [''], we don't want that.
@@ -459,6 +457,24 @@ class PathWalker {
       prev = prev.child(part)
     }
     this.cwd = prev
+  }
+
+  // factor out to subclasses
+  parseRootPath(dir: string): string {
+    if (!this.isWindows) {
+      return '/'
+    }
+
+    // if the path starts with a single separator, it's not a UNC, and we'll
+    // just get separator as the root, and driveFromUNC will return \
+    // In that case, mount \ on the root from the cwd.
+    const rootPath = win32.parse(dir).root
+    const driveFromUNC = uncToDrive(rootPath)
+    if (driveFromUNC === sep) {
+      return driveCwd(win32.resolve(driveFromUNC)) + sep
+    } else {
+      return driveFromUNC
+    }
   }
 
   newRoot() {
