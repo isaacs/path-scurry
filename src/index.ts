@@ -12,13 +12,9 @@
 // then, instead of a linked list of Path entries, each Path object
 // has a 'children' array, and a 'phead' index to indicate which child
 // indexes are provisional.
-//
-// TODO: PathWalkerWin32 and PathWalkerPosix refer to subclasses
-// where isWindows is hard coded, to prevent those checks each time.  Then
-// export the "expected" one as PathWalker, and the other two as well.
 
 import LRUCache from 'lru-cache'
-import { parse, resolve, sep } from 'path'
+import { posix, sep, win32 } from 'path'
 
 import { Dir, lstatSync, opendirSync, readlinkSync } from 'fs'
 import { lstat, opendir, readlink } from 'fs/promises'
@@ -41,12 +37,8 @@ const uncRegexp = /^\\\\\?\\([a-z]:)\\?$/
 const unUNCDrive = (rootPath: string): string =>
   rootPath.replace(/\//g, '\\').replace(uncRegexp, '$1:\\')
 
-const isWindows = process.platform === 'win32'
-const isDarwin = process.platform === 'darwin'
-const defNocase = isWindows || isDarwin
 const driveCwd = (c: string) => c.match(/^([a-z]):(?:\\|\/|$)/)?.[1]
 const eitherSep = /[\\\/]/
-const splitSep = isWindows ? eitherSep : sep
 
 // a PathWalker has a PointerSet with the following setup:
 // - value: the string representing the path portion, using
@@ -182,6 +174,13 @@ interface PathOpts {
   next?: Path
   linkTarget?: Path
 }
+
+class ResolveCache extends LRUCache<string, Path> {
+  constructor() {
+    super({ max: 256 })
+  }
+}
+
 export class Path implements PathOpts {
   // TODO: cache resolves from this path
   basename: string
@@ -189,6 +188,10 @@ export class Path implements PathOpts {
   fullpath?: string
   type: number
   nocase: boolean
+  isWindows: boolean
+  splitSep: string | RegExp
+
+  cache: ResolveCache
   root: Path
   roots: { [k: string]: Path }
   parent?: Path
@@ -199,12 +202,14 @@ export class Path implements PathOpts {
   prev?: Path
   next?: Path
   linkTarget?: Path
+
   constructor(
     basename: string,
     type: number = UNKNOWN,
-    root: Path,
+    root: Path | undefined,
     roots: { [k: string]: Path },
     nocase: boolean,
+    isWindows: boolean,
     opts: PathOpts
   ) {
     this.basename = basename
@@ -212,7 +217,10 @@ export class Path implements PathOpts {
     this.type = type & TYPEMASK
     this.nocase = nocase
     this.roots = roots
-    this.root = root
+    this.root = root || this
+    this.cache = new ResolveCache()
+    this.isWindows = isWindows
+    this.splitSep = isWindows ? eitherSep : sep
     Object.assign(this, opts)
   }
 
@@ -221,13 +229,18 @@ export class Path implements PathOpts {
     if (!path) {
       return this
     }
-    const rootPath = isWindows
-      ? parse(path).root
+    const cached = this.cache.get(path)
+    if (cached) {
+      return cached
+    }
+    const rootPath = this.isWindows
+      ? win32.parse(path).root
       : path.startsWith('/')
       ? '/'
       : ''
     const dir = path.substring(rootPath.length)
-    const dirParts = dir.split(splitSep)
+    const dirParts = dir.split(this.splitSep)
+    let result: Path
     if (rootPath) {
       let root =
         this.roots[rootPath] ||
@@ -235,10 +248,12 @@ export class Path implements PathOpts {
           ? (this.roots[rootPath] = this.root)
           : new PathWalker(rootPath, this).root)
       this.roots[rootPath] = root
-      return root.resolveParts(dirParts)
+      result = root.resolveParts(dirParts)
     } else {
-      return this.resolveParts(dirParts)
+      result = this.resolveParts(dirParts)
     }
+    this.cache.set(path, result)
+    return result
   }
 
   resolveParts(dirParts: string[]) {
@@ -250,7 +265,15 @@ export class Path implements PathOpts {
   }
 
   newChild(name: string, type: number = UNKNOWN, opts: PathOpts = {}) {
-    return new Path(name, type, this.root, this.roots, this.nocase, opts)
+    return new Path(
+      name,
+      type,
+      this.root,
+      this.roots,
+      this.nocase,
+      this.isWindows,
+      opts
+    )
   }
 
   child(pathPart: string): Path {
@@ -316,7 +339,7 @@ export class Path implements PathOpts {
   }
 
   sameRoot(rootPath: string): boolean {
-    if (!isWindows) {
+    if (!this.isWindows) {
       // only one root, and it's always /
       return true
     }
@@ -374,37 +397,43 @@ export interface PathWalkerOpts {
   nocase?: boolean
   roots?: { [k: string]: Path }
   cache?: LRUCache<string, Path>
+  platform?: string
 }
 
-export class PathWalker {
+class PathWalker {
   root: Path
   rootPath: string
   roots: { [k: string]: Path }
   cwd: Path
   cwdPath: string
   nocase: boolean
-  cache: LRUCache<string, Path>
+  platform: string
+  isWindows: boolean
+  isDarwin: boolean
 
   constructor(
     cwd: string = process.cwd(),
     {
-      nocase = defNocase,
+      nocase,
       roots = Object.create(null),
-      cache = new LRUCache<string, Path>({ max: 256 }),
+      platform = process.platform,
     }: PathWalkerOpts = {}
   ) {
-    this.nocase = nocase
-    this.cache = cache
+    this.platform = platform
+    this.isWindows = platform === 'win32'
+    this.isDarwin = platform === 'darwin'
+    this.nocase =
+      nocase !== undefined ? nocase : this.isWindows || this.isDarwin
 
     // resolve and split root, and then add to the store.
     // this is the only time we call path.resolve()
-    const cwdPath = resolve(cwd)
+    const cwdPath = (this.isWindows ? win32 : posix).resolve(cwd)
     this.cwdPath = cwdPath
-    if (isWindows) {
-      const rootPath = parse(cwdPath).root
+    if (this.isWindows) {
+      const rootPath = win32.parse(cwdPath).root
       this.rootPath = unUNCDrive(rootPath)
       if (this.rootPath === sep) {
-        const drive = driveCwd(resolve(rootPath))
+        const drive = driveCwd(win32.resolve(rootPath))
         this.rootPath = drive + sep
       }
     } else {
@@ -422,7 +451,7 @@ export class PathWalker {
     if (existing) {
       this.root = existing
     } else {
-      this.root = this.newPath(this.rootPath, IFDIR)
+      this.root = this.newRoot()
       this.roots[this.rootPath] = this.root
     }
     let prev: Path = this.root
@@ -430,6 +459,18 @@ export class PathWalker {
       prev = prev.child(part)
     }
     this.cwd = prev
+  }
+
+  newRoot() {
+    return new Path(
+      this.rootPath,
+      IFDIR,
+      undefined,
+      this.roots,
+      this.nocase,
+      this.isWindows,
+      {}
+    )
   }
 
   // same as require('path').resolve
@@ -441,14 +482,18 @@ export class PathWalker {
       const p = paths[i]
       if (!p || p === '.') continue
       r = `${r}/${p}`
-      if (
-        p.startsWith('/') ||
-        (isWindows && (p.startsWith('\\') || /^[a-z]:(\/|\\)/i.test(p)))
-      ) {
+      if (this.isAbsolute(p)) {
         break
       }
     }
     return this.fullpath(this.cwd.resolve(r))
+  }
+
+  isAbsolute(p: string): boolean {
+    return (
+      p.startsWith('/') ||
+      (this.isWindows && (p.startsWith('\\') || /^[a-z]:(\/|\\)/i.test(p)))
+    )
   }
 
   parent(entry: Path): Path {
@@ -611,16 +656,12 @@ export class PathWalker {
     return p
   }
 
-  newPath(name: string, type: number = UNKNOWN, opts: PathOpts = {}) {
-    return new Path(name, type, this.root, this.roots, this.nocase, opts)
-  }
-
   readdirAddNewChild(parent: Path, e: Dirent): Path {
     // alloc new entry at head, so it's never provisional
     const next = parent.chead
     const ctail = parent.ctail
     const type = entToType(e)
-    const child = this.newPath(e.name, type, { parent, next })
+    const child = parent.newChild(e.name, type, { parent, next })
     if (next) next.prev = child
     parent.chead = child
     if (!ctail) parent.ctail = child
@@ -828,5 +869,31 @@ export class PathWalker {
       this.readlinkFail(entry, er as NodeJS.ErrnoException)
       return undefined
     }
+  }
+}
+
+// TODO: factor out all the windows specific stuff and put it into
+// PathWalkerWin32.  Then make PathWalker into abstract PathWalkerBase, and
+// export the process.platform version as PathWalker, and don't take a
+// 'platform' argument at all.
+
+// windows paths, default nocase=true
+export class PathWalkerWin32 extends PathWalker {
+  constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
+    super(cwd, { ...opts, platform: 'win32' })
+  }
+}
+
+// posix paths, default nocase=true
+export class PathWalkerDarwin extends PathWalker {
+  constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
+    super(cwd, { ...opts, platform: 'darwin' })
+  }
+}
+
+// posix paths, default nocase=false
+export class PathWalkerPosix extends PathWalker {
+  constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
+    super(cwd, { ...opts, platform: 'posix' })
   }
 }
