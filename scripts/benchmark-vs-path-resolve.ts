@@ -19,7 +19,7 @@
 // path resolution process, in which case, don't do that lol.
 
 import { posix } from 'path'
-import { Path, PathWalkerPosix, PathWalkerWin32 } from '../'
+import { PathBase, PathWalkerPosix, PathWalkerWin32 } from '../'
 const posixResolve = posix.resolve
 const win32Resolve = posix.resolve
 
@@ -58,7 +58,7 @@ const replaceMod = ([s, t]: [s: string, t?: string]): [
     : [s, t]
 }
 const run = (
-  r: (s: string, t?: string) => string | Path,
+  r: (s: string, t?: string) => string | PathBase,
   s: string,
   t?: string
 ) => {
@@ -99,6 +99,9 @@ const cases = [
   [mod, abs],
   [abs, mod],
 ]
+const { format } = new Intl.NumberFormat('en', {
+  maximumFractionDigits: 2,
+})
 for (const [s, t] of cases) {
   process.stderr.write('.')
   const prwin = run(pathWinResolve, s, t)
@@ -110,9 +113,9 @@ for (const [s, t] of cases) {
   const pww = run(pwwResolve, s, t)
   process.stderr.write('.')
   console.log(`\r(${s}${t ? ',' + t : ''})`, {
-    'path.win32.resolve()': prwin,
-    'path.posix.resolve()': prnix,
-    'PathWalkerPosix': pwp,
-    'PathWalkerWin32': pww,
+    'path.win32.resolve()': format(prwin),
+    'path.posix.resolve()': format(prnix),
+    'PathWalkerPosix': format(pwp),
+    'PathWalkerWin32': format(pww),
   })
 }
