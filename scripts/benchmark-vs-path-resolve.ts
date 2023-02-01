@@ -32,7 +32,9 @@ const pathResolveSingle = (s: string, t?: string) =>
 const pathWinResolveSingle = (s: string, t?: string) =>
   t === undefined ? win32Resolve(s) : win32Resolve(s, t)
 
-const pwResolve = (s: string, t?: string) =>
+const pwResolve1 = (s: string, t?: string) =>
+  t === undefined ? pw.resolve(s) : pw.resolve(s, t)
+const pwResolve2 = (s: string, t?: string) =>
   t === undefined ? pw.resolve(s) : pw.resolve(pw.resolve(s), t)
 
 console.log('showing results in operations / ms (bigger is better)')
@@ -43,16 +45,25 @@ const cases = [
   [p, abs],
 ]
 for (const [s, t] of cases) {
+  process.stderr.write('.')
   const prwin1 = run(pathWinResolveSingle, s, t)
+  process.stderr.write('.')
   const prwin2 = run(pathWinResolveDouble, s, t)
+  process.stderr.write('.')
   const prnix1 = run(pathResolveSingle, s, t)
+  process.stderr.write('.')
   const prnix2 = run(pathResolveDouble, s, t)
-  const pw = run(pwResolve, s, t)
+  process.stderr.write('.')
+  const pw1 = run(pwResolve1, s, t)
+  process.stderr.write('.')
+  const pw2 = run(pwResolve2, s, t)
+  process.stderr.write('.\n')
   console.log(`(${s}${t ? ',' + t:''})`, {
     prwin1,
     prwin2,
     prnix1,
     prnix2,
-    pw,
+    pw1,
+    pw2,
   })
 }

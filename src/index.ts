@@ -7,8 +7,15 @@
 // TODO: pw.resolve() should ONLY take strings, throw away any relatives
 // that come before any absolutes, and cache the lookup
 //
-// TODO: replace the children linked list with an array of children,
-// but test perf because that might not be good.
+// TODO: instead of a linked list of children, put all Path objects into
+// an array that the PathWalker has, and give them a number 'key' value.
+// then, instead of a linked list of Path entries, each Path object
+// has a 'children' array, and a 'phead' index to indicate which child
+// indexes are provisional.
+//
+// TODO: PathWalkerWin32 and PathWalkerPosix refer to subclasses
+// where isWindows is hard coded, to prevent those checks each time.  Then
+// export the "expected" one as PathWalker, and the other two as well.
 
 import LRUCache from 'lru-cache'
 import { parse, resolve, sep } from 'path'
@@ -297,19 +304,29 @@ export class PathWalker {
     this.cwd = prev
   }
 
+  resolve(...paths: string[]): string {
+    // first figure out the minimum number of paths we have to test
+    // we always start at cwd, but any absolutes will bump the start
+    let r = ''
+    for (let i = paths.length - 1; i >= 0; i--) {
+      const p = paths[i]
+      if (!p || p === '.') continue
+      r = `${r}/${p}`
+      if (p.startsWith('/') || isWindows && (
+        p.startsWith('\\') || /^[a-z]:(\/|\\)/i.test(p))) {
+        break
+      }
+    }
+    return this.fullpath(this.resolveObj(this.cwd, r))
+  }
+
   // if path is absolute on a diff root, return
   // new PathWalker(path, this).cwd to store paths in the same store
   //
   // if absolute on the same root, walk from the root
   //
   // otherwise, walk it from this.cwd, and return pointer to result
-  resolve(path: string): Path
-  resolve(entry: Path, path?: string): Path
-  resolve(entry: Path | string, path?: string): Path {
-    if (typeof entry === 'string') {
-      path = entry
-      entry = this.cwd
-    }
+  resolveObj(entry: Path, path?: string): Path {
     if (!path) {
       return entry
     }
@@ -756,7 +773,7 @@ export class PathWalker {
     /* c8 ignore stop */
     try {
       const read = await readlink(fp)
-      const linkTarget = this.resolve(p, read)
+      const linkTarget = this.resolveObj(p, read)
       if (linkTarget) {
         return (entry.linkTarget = linkTarget)
       }
@@ -797,7 +814,7 @@ export class PathWalker {
     /* c8 ignore stop */
     try {
       const read = readlinkSync(fp)
-      const linkTarget = this.resolve(p, read)
+      const linkTarget = this.resolveObj(p, read)
       if (linkTarget) {
         return (entry.linkTarget = linkTarget)
       }
