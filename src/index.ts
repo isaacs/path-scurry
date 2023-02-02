@@ -17,7 +17,7 @@ import LRUCache from 'lru-cache'
 import { posix, sep, win32 } from 'path'
 
 import { Dir, lstatSync, opendirSync, readlinkSync } from 'fs'
-import { lstat, opendir, readlink } from 'fs/promises'
+import { lstat, readdir, readlink } from 'fs/promises'
 
 import { Dirent, Stats } from 'fs'
 
@@ -50,46 +50,14 @@ const eitherSep = /[\\\/]/
 //    - low 4 bits are the S_IFMT nibble, or 0 for "unknown"
 //    - remaining bits are used for various helpful flags.
 // - parent: pointer to parent directory
-// - chead: start of linked list of child entries
-// - ctail: end of linked list of child entries
-// - next: next sibling entry in the same directory
-// - prev: previous sibling entry in the same directory
+// - children: array of provisional and known child entries
+// - provisional: index in the array of the first provisional child
+//   0 until a successful readdir with entries.
 // - linkTarget: pointer to path entry that symlink references, if known
 //
 // Each PathWalker has a single root, but they can share the same store,
 // so you could potentially have multiple entries in the store that are
 // parentless, even though each PathWalker only has a single root entry.
-
-// PROVISIONAL CHILDREN vs REAL CHILDREN
-// each entry has chead and ctail, which define the entire set of children
-// they also have a phead which is the first "provisional" child, ie a
-// child entry that has not been the subject of a readdir() walk or explicit
-// lstat.
-//
-// when we call pw.child(parent, pathPart) we search the list of children
-// for any child entry between chead and ctail, and return it if found,
-// otherwise insert at phead.  If phead not set, then it's the new entry
-// appended to ctail.  If it is set, then just append to ctail.
-//
-// when we call pw.readdir() and READDIR_CALLED bit is set, return the list
-// of children from chead to before phead.
-// If READDIR_CALLED is *not* set, but chead and phead are set, then for
-// each entry returned from the fs.Dir iterator, search from phead to ctail
-// to see a matching entry.  If found, and equal to phead, then advance phead
-// (which might set phead to nullPointer if phead was equal to ctail).
-// If found and not phead, move to behind phead.  Otherwise, create a new
-// entry and insert behind phead.
-// If READDIR_CALLED is not set, and chead and phead are not set, then just
-// build the list and don't set phead.
-// There should never be a case where phead is set, but chead and ctail are
-// not set.
-// There should never be a case where READDIR_CALLED is set, and chead/ctail
-// are not set.
-// There should never be a case where READDIR_CALLED is not set, and chead
-// is not equal to phead.
-// The only case where READDIR_CALLED will be set, and chead will be equal
-// to phead, is if there are no actual children, only provisional ones. And
-// in that case, we can bail out of readdir early.
 
 const UNKNOWN = 0 // may not even exist, for all we know
 const IFIFO = 0b0001
@@ -111,7 +79,7 @@ const ENOTDIR = 0b0010_0000
 // (can also be set on lstat errors like EACCES or ENAMETOOLONG)
 const ENOENT = 0b0100_0000
 // cannot have child entries
-const ENOCHILD = ENOTDIR | ENOENT
+const ENOCHILD = ENOTDIR | ENOENT | IFREG
 // set if we fail to readlink
 const ENOREADLINK = 0b1000_0000
 const TYPEMASK = 0b1111_1111
@@ -141,11 +109,8 @@ const entToType = (s: Dirent | Stats) =>
 //   fullpath?: string (cached resolve())
 //   type: number (uint32 of flags)
 //   parent?: Path
-//   chead?: Path
-//   ctail?: Path
-//   phead?: Path
-//   prev?: Path
-//   next?: Path
+//   children: Path[]
+//   provisional: number
 //   linkTarget?: Path
 // }
 //
@@ -170,11 +135,8 @@ const entToType = (s: Dirent | Stats) =>
 interface PathOpts {
   fullpath?: string
   parent?: PathBase
-  chead?: PathBase
-  ctail?: PathBase
-  phead?: PathBase
-  prev?: PathBase
-  next?: PathBase
+  children?: PathBase[]
+  provisional?: number
   linkTarget?: PathBase
 }
 
@@ -197,11 +159,8 @@ export abstract class PathBase implements PathOpts {
   roots: { [k: string]: PathBase }
   parent?: PathBase
   // TODO: test replacing linked list with Path[], indexes with numbers
-  chead?: PathBase
-  ctail?: PathBase
-  phead?: PathBase
-  prev?: PathBase
-  next?: PathBase
+  children: PathBase[] = []
+  provisional: number = 0
   linkTarget?: PathBase
 
   constructor(
@@ -267,15 +226,12 @@ export abstract class PathBase implements PathOpts {
     }
 
     // find the child
-    const { chead, ctail, phead } = this
+    const { children } = this
     const name = this.nocase ? pathPart.toLowerCase() : pathPart
-    for (let p = chead; p; p = p.next) {
+    for (const p of children) {
       const v = p.matchName
       if (v === name) {
         return p
-      }
-      if (p === ctail) {
-        break
       }
     }
 
@@ -294,29 +250,12 @@ export abstract class PathBase implements PathOpts {
       pchild.setType(ENOENT)
     }
 
-    if (phead) {
-      if (ctail === undefined) {
-        throw new Error(
-          'have provisional children, but invalid children list'
-        )
-      }
-      // have provisional children already, just append
-      ctail.next = pchild
-      pchild.prev = ctail
-      this.ctail = pchild
-    } else if (ctail) {
-      // have children, just not provisional children
-      ctail.next = pchild
-      pchild.prev = ctail
-      Object.assign(this, { ctail: pchild, phead: pchild })
-    } else {
-      // first child, of any kind
-      Object.assign(this, {
-        chead: pchild,
-        ctail: pchild,
-        phead: pchild,
-      })
+    // have children, just not provisional children
+    // or first child, of any kind, is provisional
+    if (this.provisional < children.length) {
+      this.provisional = children.length
     }
+    children.push(pchild)
     return pchild
   }
 
@@ -555,67 +494,54 @@ abstract class PathWalkerBase {
     return (p.getType() & READDIR_CALLED) === READDIR_CALLED
   }
 
-  *cachedReaddir(entry: PathBase): Iterable<PathBase> {
-    const { chead, ctail, phead } = entry
-    while (true) {
-      for (let c = chead; c && c !== phead; c = c.next) {
-        yield c
-        if (c === ctail) {
-          break
-        }
-      }
-      return
-    }
+  cachedReaddir(entry: PathBase): PathBase[] {
+    const { children, provisional } = entry
+    return children.slice(0, provisional)
   }
 
   // asynchronous iterator for dir entries
-  async *readdir(entry: PathBase = this.cwd): AsyncIterable<PathBase> {
+  // not a "for await" async iterator, but an async function
+  // that returns an iterable array.
+  async readdir(entry: PathBase = this.cwd): Promise<PathBase[]> {
     const t = entry.getType()
     if ((t & ENOCHILD) !== 0) {
-      return
+      return []
     }
 
     if (this.calledReaddir(entry)) {
-      for (const e of this.cachedReaddir(entry)) yield e
-      return
+      return this.cachedReaddir(entry)
     }
 
     // else read the directory, fill up children
     // de-provisionalize any provisional children.
     const fullpath = this.fullpath(entry)
-    if (fullpath === undefined) {
-      return
-    }
-    let finished = false
     try {
-      const dir = await opendir(fullpath)
-      for await (const e of dir) {
-        yield this.readdirAddChild(entry, e)
+      // iterators are cool, and this does have the shortcoming
+      // of falling over on dirs with *massive* amounts of entries,
+      // but async iterators are just too slow by comparison.
+      for (const e of await readdir(fullpath, { withFileTypes: true })) {
+        this.readdirAddChild(entry, e)
       }
-      finished = true
     } catch (er) {
       this.readdirFail(entry, er as NodeJS.ErrnoException)
-    } finally {
-      if (finished) {
-        this.readdirSuccess(entry)
-      } else {
-        // all refs must be considered provisional, since it did not
-        // complete.
-        entry.phead = entry.chead
-      }
+      // all refs must be considered provisional, since it did not
+      // complete.  but if we haven't gotten any children, then it's
+      // still -1.
+      entry.provisional = entry.children.length ? 0 : -1
+      return []
     }
+
+    this.readdirSuccess(entry)
+    return this.cachedReaddir(entry)
   }
 
   readdirSuccess(entry: PathBase) {
     // succeeded, mark readdir called bit
     entry.addType(READDIR_CALLED)
     // mark all remaining provisional children as ENOENT
-    const { phead, ctail } = entry
-    for (let p = phead; p; p = p.next) {
-      this.markENOENT(p)
-      if (p === ctail) {
-        break
-      }
+    const { children, provisional } = entry
+    for (let p = provisional; p < children.length; p++) {
+      this.markENOENT(children[p])
     }
   }
 
@@ -630,67 +556,49 @@ abstract class PathWalkerBase {
     entry: PathBase,
     e: Dirent
   ): PathBase | undefined {
-    const { phead } = entry
-    for (let p = phead; p; p = (p as PathBase).next) {
-      if (!this.matchName(p.matchName, e.name)) {
+    const { children, provisional } = entry
+    for (let p = provisional; p < children.length; p++) {
+      const pchild = children[p]
+      if (!this.matchName(pchild.matchName, e.name)) {
         continue
       }
 
-      return this.readdirPromoteChild(entry, e, p)
+      return this.readdirPromoteChild(entry, e, pchild, p)
     }
   }
 
-  readdirPromoteChild(entry: PathBase, e: Dirent, p: PathBase): PathBase {
-    const phead = entry.phead
+  readdirPromoteChild(
+    entry: PathBase,
+    e: Dirent,
+    p: PathBase,
+    index: number
+  ): PathBase {
+    const { children, provisional } = entry
     const v = this.basename(p)
     const type = entToType(e)
-    const ctail = entry.ctail
-    const chead = entry.chead
-    /* c8 ignore start */
-    if (!chead || !ctail || !phead) {
-      throw new Error('cannot promote, no provisional entries')
-    }
-    /* c8 ignore stop */
 
     p.setType(type)
     // case sensitivity fixing when we learn the true name.
     if (v !== e.name) p.basename = e.name
 
-    if (p === phead) {
-      // just advance phead (potentially off the list)
-      entry.phead = phead.next
-    } else {
-      // move to head of list
-      const { prev, next } = p
-      /* c8 ignore start */
-      if (!prev) {
-        throw new Error('non-head PathBase node has no previous entry')
-      }
-
-      // if p was at the end of the list, move back tail
-      // otherwise, next.prev = prev
-      if (p === ctail) entry.ctail = prev
-      else if (next) next.prev = prev
-
-      // prev.next points p's next (possibly null)
-      prev.next = next
-      // move p to chead
-      chead.prev = p
-      p.next = chead
-      entry.chead = p
+    // just advance provisional index (potentially off the list),
+    // otherwise we have to splice/pop it out and re-insert at head
+    if (index !== provisional) {
+      if (index === children.length - 1) entry.children.pop()
+      else entry.children.splice(index, 1)
+      entry.children.unshift(p)
     }
+    entry.provisional++
     return p
   }
 
   readdirAddNewChild(parent: PathBase, e: Dirent): PathBase {
     // alloc new entry at head, so it's never provisional
-    const next = parent.chead
-    const ctail = parent.ctail
+    const { children } = parent
     const type = entToType(e)
-    const child = parent.newChild(e.name, type, { parent, next })
-    if (next) next.prev = child
-    parent.chead = child
-    if (!ctail) parent.ctail = child
+    const child = parent.newChild(e.name, type, { parent })
+    children.unshift(child)
+    parent.provisional++
     return child
   }
 
@@ -726,16 +634,12 @@ abstract class PathWalkerBase {
   }
 
   markChildrenENOENT(entry: PathBase) {
-    const h = entry.chead
     // all children are provisional
-    entry.phead = h
-    const t = entry.ctail
+    entry.provisional = 0
+
     // all children do not exist
-    for (let p = h; p; p = p.next) {
+    for (const p of entry.children) {
       this.markENOENT(p)
-      if (p === t) {
-        break
-      }
     }
   }
 
@@ -770,7 +674,7 @@ abstract class PathWalkerBase {
         this.readdirSuccess(entry)
       } else {
         // all refs must be considered provisional now, since it failed.
-        entry.phead = entry.chead
+        entry.provisional = 0
       }
     }
   }
