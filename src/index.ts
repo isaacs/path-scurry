@@ -2,19 +2,12 @@
 // The PathWalker should operate on *strings*, and the Paths should
 // operate on *Paths*, should be a good blend of performance and
 // usability.
-// so PathWalker.dirname(str) => PathWalker.resolve(dir).dirname().fullpath
 //
-// TODO: pw.resolve() should ONLY take strings, throw away any relatives
-// that come before any absolutes, and cache the lookup
-//
-// TODO: instead of a linked list of children, put all Path objects into
-// an array that the PathWalker has, and give them a number 'key' value.
-// then, instead of a linked list of Path entries, each Path object
-// has a 'children' array, and a 'phead' index to indicate which child
-// indexes are provisional.
+// so PathWalker.dirname(str) returns
+// PathWalker.cwd().resolve(dir).dirname().fullpath()
 
 import LRUCache from 'lru-cache'
-import { posix, sep, win32 } from 'path'
+import { posix, win32 } from 'path'
 
 import { Dir, lstatSync, opendirSync, readlinkSync } from 'fs'
 import { lstat, readdir, readlink } from 'fs/promises'
@@ -40,7 +33,7 @@ const uncToDrive = (rootPath: string): string =>
 // if it's a drive letter path, return the drive letter plus \
 // otherwise, return \
 const driveCwd = (c: string): string =>
-  (c.match(/^([a-z]):(?:\\|\/|$)/)?.[1] || '') + sep
+  (c.match(/^([a-z]):(?:\\|\/|$)/)?.[1] || '') + '\\'
 const eitherSep = /[\\\/]/
 
 // a PathWalker has a PointerSet with the following setup:
@@ -105,7 +98,7 @@ const entToType = (s: Dirent | Stats) =>
 // Non-PointerSet approach:
 // each "Path" is:
 // {
-//   basename: string (no separators, just a single portion)
+//   name: string (no separators, just a single portion)
 //   fullpath?: string (cached resolve())
 //   type: number (uint32 of flags)
 //   parent?: Path
@@ -146,13 +139,15 @@ class ResolveCache extends LRUCache<string, PathBase> {
   }
 }
 
-export abstract class PathBase implements PathOpts {
-  basename: string
+// Path objects are sort of like a super powered Dirent
+export abstract class PathBase implements Dirent {
+  name: string
   matchName: string
-  fullpath?: string
-  type: number
+  #fullpath?: string
+  #type: number
   nocase: boolean
   abstract splitSep: string | RegExp
+  abstract sep: string
 
   cache: ResolveCache
   root: PathBase
@@ -164,17 +159,17 @@ export abstract class PathBase implements PathOpts {
   linkTarget?: PathBase
 
   constructor(
-    basename: string,
+    name: string,
     type: number = UNKNOWN,
     root: PathBase | undefined,
     roots: { [k: string]: PathBase },
     nocase: boolean,
     opts: PathOpts
   ) {
-    this.basename = basename
+    this.name = name
 
-    this.matchName = nocase ? basename.toLowerCase() : basename
-    this.type = type & TYPEMASK
+    this.matchName = nocase ? name.toLowerCase() : name
+    this.#type = type & TYPEMASK
     this.nocase = nocase
     this.roots = roots
     this.root = root || this
@@ -197,12 +192,9 @@ export abstract class PathBase implements PathOpts {
     const rootPath = this.getRootString(path)
     const dir = path.substring(rootPath.length)
     const dirParts = dir.split(this.splitSep)
-    let result: PathBase
-    if (rootPath) {
-      result = this.getRoot(rootPath).resolveParts(dirParts)
-    } else {
-      result = this.resolveParts(dirParts)
-    }
+    const result: PathBase = rootPath
+      ? this.getRoot(rootPath).resolveParts(dirParts)
+      : this.resolveParts(dirParts)
     this.cache.set(path, result)
     return result
   }
@@ -229,8 +221,7 @@ export abstract class PathBase implements PathOpts {
     const { children } = this
     const name = this.nocase ? pathPart.toLowerCase() : pathPart
     for (const p of children) {
-      const v = p.matchName
-      if (v === name) {
+      if (p.matchName === name) {
         return p
       }
     }
@@ -238,14 +229,14 @@ export abstract class PathBase implements PathOpts {
     // didn't find it, create provisional child, since it might not
     // actually exist.  If we know the parent isn't a dir, then
     // in fact it CAN'T exist.
-    const s = this.parent ? sep : ''
-    const fullpath = this.fullpath
-      ? this.fullpath + s + pathPart
+    const s = this.parent ? this.sep : ''
+    const fullpath = this.#fullpath
+      ? this.#fullpath + s + pathPart
       : undefined
-    const pchild = this.newChild(pathPart, UNKNOWN, {
-      parent: this,
-      fullpath,
-    })
+    const pchild = this.newChild(pathPart, UNKNOWN)
+    pchild.parent = this
+    pchild.#fullpath = fullpath
+
     if (this.getType() & ENOCHILD) {
       pchild.setType(ENOENT)
     }
@@ -259,14 +250,28 @@ export abstract class PathBase implements PathOpts {
     return pchild
   }
 
+  fullpath(): string {
+    if (this.#fullpath !== undefined) {
+      return this.#fullpath
+    }
+    const name = this.name
+    const p = this.parent
+    if (!p) {
+      return (this.#fullpath = this.name)
+    }
+    const pv = p.fullpath()
+    const fp = pv + (!p.parent ? '' : this.sep) + name
+    return (this.#fullpath = fp)
+  }
+
   getType(): number {
-    return this.type
+    return this.#type
   }
   setType(type: number): number {
-    return (this.type = type & TYPEMASK)
+    return (this.#type = type & TYPEMASK)
   }
   addType(type: number): number {
-    return (this.type |= type & TYPEMASK)
+    return (this.#type |= type & TYPEMASK)
   }
 
   isUnknown(): boolean {
@@ -299,16 +304,17 @@ export abstract class PathBase implements PathOpts {
 }
 
 export class PathWin32 extends PathBase {
+  sep: '\\' = '\\'
   splitSep: RegExp = eitherSep
   constructor(
-    basename: string,
+    name: string,
     type: number = UNKNOWN,
     root: PathBase | undefined,
     roots: { [k: string]: PathBase },
     nocase: boolean = true,
     opts: PathOpts
   ) {
-    super(basename, type, root, roots, nocase, opts)
+    super(name, type, root, roots, nocase, opts)
   }
 
   newChild(name: string, type: number = UNKNOWN, opts: PathOpts = {}) {
@@ -327,7 +333,7 @@ export class PathWin32 extends PathBase {
   }
 
   getRoot(rootPath: string): PathBase {
-    if (rootPath === this.root.basename) {
+    if (rootPath === this.root.name) {
       return this.root
     }
     if (this.sameRoot(rootPath)) {
@@ -345,7 +351,7 @@ export class PathWin32 extends PathBase {
       .replace(/\\\\\?\\([a-z]:)\\?$/, '$1:\\')
     // windows can (rarely) have case-sensitive filesystem, but
     // UNC and drive letters are always case-insensitive
-    if (rootPath.toUpperCase() === this.root.basename.toUpperCase()) {
+    if (rootPath.toUpperCase() === this.root.name.toUpperCase()) {
       return true
     }
     return false
@@ -353,17 +359,18 @@ export class PathWin32 extends PathBase {
 }
 
 export class PathPosix extends PathBase {
-  splitSep: string = sep
+  splitSep: '/' = '/'
+  sep: '/' = '/'
 
   constructor(
-    basename: string,
+    name: string,
     type: number = UNKNOWN,
     root: PathBase | undefined,
     roots: { [k: string]: PathBase },
     nocase: boolean = false,
     opts: PathOpts
   ) {
-    super(basename, type, root, roots, nocase, opts)
+    super(name, type, root, roots, nocase, opts)
   }
 
   getRootString(path: string): string {
@@ -386,9 +393,6 @@ export class PathPosix extends PathBase {
   }
 }
 
-export const Path: typeof PathWin32 | typeof PathPosix =
-  process.platform === 'win32' ? PathWin32 : PathPosix
-
 export interface PathWalkerOpts {
   nocase?: boolean
   roots?: { [k: string]: PathBase }
@@ -403,10 +407,12 @@ abstract class PathWalkerBase {
   cwd: PathBase
   cwdPath: string
   abstract nocase: boolean
+  abstract sep: string | RegExp
 
   constructor(
     cwd: string = process.cwd(),
     pathImpl: typeof win32 | typeof posix,
+    sep: string | RegExp,
     { roots = Object.create(null) }: PathWalkerOpts = {}
   ) {
     // resolve and split root, and then add to the store.
@@ -440,7 +446,7 @@ abstract class PathWalkerBase {
 
   abstract newRoot(): PathBase
 
-  // same as require('path').resolve
+  // same interface as require('path').resolve
   resolve(...paths: string[]): string {
     // first figure out the minimum number of paths we have to test
     // we always start at cwd, but any absolutes will bump the start
@@ -453,68 +459,86 @@ abstract class PathWalkerBase {
         break
       }
     }
-    return this.fullpath(this.cwd.resolve(r))
+    return this.cwd.resolve(r).fullpath()
   }
 
   abstract isAbsolute(p: string): boolean
 
-  parent(entry: PathBase): PathBase {
-    // parentless entries are root path entries.
-    return entry.parent || entry
-  }
-
-  // dirname/basename/fullpath always within a given PW, so we know
+  // dirname/name/fullpath always within a given PW, so we know
   // that the only thing that can be parentless is the root, unless
   // something is deeply wrong.
-  basename(entry: PathBase = this.cwd): string {
-    return entry.basename
+  basename(entry: PathBase | string = this.cwd): string {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    return entry.name
   }
 
-  fullpath(entry: PathBase = this.cwd): string {
-    if (entry.fullpath) {
-      return entry.fullpath
-    }
-    const basename = this.basename(entry)
-    const p = entry.parent
-    if (!p) {
-      return (entry.fullpath = entry.basename)
-    }
-    const pv = this.fullpath(p)
-    const fp = pv + (!p.parent ? '' : '/') + basename
-    return (entry.fullpath = fp)
-  }
-
+  // move to Path
   dirname(entry: PathBase = this.cwd): string {
     return !entry.parent
-      ? this.basename(entry)
-      : this.fullpath(entry.parent)
+      ? entry.name
+      : entry.parent.fullpath()
   }
 
+  // move to Path
   calledReaddir(p: PathBase): boolean {
     return (p.getType() & READDIR_CALLED) === READDIR_CALLED
   }
 
-  cachedReaddir(entry: PathBase): PathBase[] {
+  // move to Path
+  cachedReaddir(entry: PathBase, withFileTypes: false): string[]
+  cachedReaddir(entry: PathBase, withFileTypes: true): PathBase[]
+  cachedReaddir(
+    entry: PathBase,
+    withFileTypes: boolean
+  ): string[] | PathBase[]
+  cachedReaddir(
+    entry: PathBase,
+    withFileTypes: boolean
+  ): string[] | PathBase[] {
     const { children, provisional } = entry
-    return children.slice(0, provisional)
+    const c = children.slice(0, provisional)
+    return withFileTypes ? c : c.map(c => c.name)
   }
 
+  // move withFileTypes impl to Path, call that and stringify if not
   // asynchronous iterator for dir entries
   // not a "for await" async iterator, but an async function
   // that returns an iterable array.
-  async readdir(entry: PathBase = this.cwd): Promise<PathBase[]> {
+  readdir(
+    entry?: PathBase | string,
+    options?: { withFileTypes: true }
+  ): Promise<PathBase[]>
+  readdir(
+    entry: PathBase | string,
+    options: { withFileTypes: false }
+  ): Promise<string[]>
+  readdir(
+    entry: PathBase | string,
+    options: { withFileTypes: boolean }
+  ): Promise<string[] | PathBase[]>
+  async readdir(
+    entry: PathBase | string = this.cwd,
+    { withFileTypes = true }: { withFileTypes: boolean } = {
+      withFileTypes: true,
+    }
+  ): Promise<PathBase[] | string[]> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
     const t = entry.getType()
     if ((t & ENOCHILD) !== 0) {
       return []
     }
 
     if (this.calledReaddir(entry)) {
-      return this.cachedReaddir(entry)
+      return this.cachedReaddir(entry, withFileTypes)
     }
 
     // else read the directory, fill up children
     // de-provisionalize any provisional children.
-    const fullpath = this.fullpath(entry)
+    const fullpath = entry.fullpath()
     try {
       // iterators are cool, and this does have the shortcoming
       // of falling over on dirs with *massive* amounts of entries,
@@ -532,9 +556,10 @@ abstract class PathWalkerBase {
     }
 
     this.readdirSuccess(entry)
-    return this.cachedReaddir(entry)
+    return this.cachedReaddir(entry, withFileTypes)
   }
 
+  // move to Path
   readdirSuccess(entry: PathBase) {
     // succeeded, mark readdir called bit
     entry.addType(READDIR_CALLED)
@@ -545,6 +570,7 @@ abstract class PathWalkerBase {
     }
   }
 
+  // move to Path
   readdirAddChild(entry: PathBase, e: Dirent) {
     return (
       this.readdirMaybePromoteChild(entry, e) ||
@@ -552,6 +578,7 @@ abstract class PathWalkerBase {
     )
   }
 
+  // move to Path
   readdirMaybePromoteChild(
     entry: PathBase,
     e: Dirent
@@ -559,7 +586,8 @@ abstract class PathWalkerBase {
     const { children, provisional } = entry
     for (let p = provisional; p < children.length; p++) {
       const pchild = children[p]
-      if (!this.matchName(pchild.matchName, e.name)) {
+      const name = this.nocase ? e.name.toLowerCase() : e.name
+      if (name !== pchild.matchName) {
         continue
       }
 
@@ -567,6 +595,7 @@ abstract class PathWalkerBase {
     }
   }
 
+  // move to Path
   readdirPromoteChild(
     entry: PathBase,
     e: Dirent,
@@ -574,12 +603,12 @@ abstract class PathWalkerBase {
     index: number
   ): PathBase {
     const { children, provisional } = entry
-    const v = this.basename(p)
+    const v = p.name
     const type = entToType(e)
 
     p.setType(type)
     // case sensitivity fixing when we learn the true name.
-    if (v !== e.name) p.basename = e.name
+    if (v !== e.name) p.name = e.name
 
     // just advance provisional index (potentially off the list),
     // otherwise we have to splice/pop it out and re-insert at head
@@ -592,6 +621,7 @@ abstract class PathWalkerBase {
     return p
   }
 
+  // move to Path
   readdirAddNewChild(parent: PathBase, e: Dirent): PathBase {
     // alloc new entry at head, so it's never provisional
     const { children } = parent
@@ -602,6 +632,7 @@ abstract class PathWalkerBase {
     return child
   }
 
+  // move to Path
   readdirFail(entry: PathBase, er: NodeJS.ErrnoException) {
     if (er.code === 'ENOTDIR' || er.code === 'EPERM') {
       this.markENOTDIR(entry)
@@ -611,6 +642,7 @@ abstract class PathWalkerBase {
     }
   }
 
+  // move to Path
   // save the information when we know the entry is not a dir
   markENOTDIR(entry: PathBase) {
     // entry is not a directory, so any children can't exist.
@@ -625,6 +657,7 @@ abstract class PathWalkerBase {
     this.markChildrenENOENT(entry)
   }
 
+  // move to Path
   markENOENT(entry: PathBase) {
     // mark as UNKNOWN and ENOENT
     const t = entry.getType()
@@ -633,6 +666,7 @@ abstract class PathWalkerBase {
     this.markChildrenENOENT(entry)
   }
 
+  // move to Path
   markChildrenENOENT(entry: PathBase) {
     // all children are provisional
     entry.provisional = 0
@@ -643,28 +677,57 @@ abstract class PathWalkerBase {
     }
   }
 
-  *readdirSync(entry: PathBase = this.cwd): Iterable<PathBase> {
+  // move to Path
+  /**
+   * A generator that iterates over the directory entries.
+   * Similar to fs.readdirSync, but:
+   * - Iterator rather than an array
+   * - On directory read failures, simply does not yield any entries,
+   *   rather than erroring.
+   * - `{withFileTypes}` option defaults to true, rather than false.
+   *   Ie, to get strings, pass `{withFileTypes: false}`
+   * - Results are cached.
+   */
+  readdirSync(
+    entry?: PathBase | string,
+    options?: { withFileTypes: true }
+  ): Generator<PathBase, void, void>
+  readdirSync(
+    entry: PathBase | string,
+    options: { withFileTypes: false }
+  ): Generator<string, void, void>
+  readdirSync(
+    entry: PathBase | string,
+    options: { withFileTypes: boolean }
+  ): Generator<string | PathBase, void, void>
+  *readdirSync(
+    entry: PathBase | string = this.cwd,
+    { withFileTypes = true }: { withFileTypes: boolean } = {
+      withFileTypes: true,
+    }
+  ): Generator<PathBase | string, void, void> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
     const t = entry.getType()
     if ((t & ENOCHILD) !== 0) {
       return
     }
 
     if (this.calledReaddir(entry)) {
-      for (const e of this.cachedReaddir(entry)) yield e
+      for (const e of this.cachedReaddir(entry, withFileTypes)) yield e
       return
     }
 
     // else read the directory, fill up children
     // de-provisionalize any provisional children.
-    const fullpath = this.fullpath(entry)
-    if (fullpath === undefined) {
-      return
-    }
+    const fullpath = entry.fullpath()
     let finished = false
     try {
       const dir = opendirSync(fullpath)
       for (const e of syncDirIterate(dir)) {
-        yield this.readdirAddChild(entry, e)
+        const p = this.readdirAddChild(entry, e)
+        yield withFileTypes ? p : p.name
       }
       finished = true
     } catch (er) {
@@ -679,10 +742,7 @@ abstract class PathWalkerBase {
     }
   }
 
-  matchName(a: string, b: string) {
-    return a === b || (this.nocase && a === b.toLowerCase())
-  }
-
+  // take either a string or Path, move implementation details to Path
   // fills in the data we can gather, or returns undefined on error
   async lstat(entry: PathBase = this.cwd): Promise<PathBase | undefined> {
     const t = entry.getType()
@@ -690,39 +750,39 @@ abstract class PathWalkerBase {
       return
     }
     try {
-      const path = this.fullpath(entry)
-      if (!path) return
-      entry.setType(entToType(await lstat(path)))
+      entry.setType(entToType(await lstat(entry.fullpath())))
       return entry
     } catch (er) {
       this.lstatFail(entry, er as NodeJS.ErrnoException)
     }
   }
 
+  // take either a string or Path
   lstatSync(entry: PathBase = this.cwd): PathBase | undefined {
     const t = entry.getType()
     if (t & ENOENT) {
       return
     }
     try {
-      const path = this.fullpath(entry)
-      if (!path) return
-      entry.setType(entToType(lstatSync(path)))
+      entry.setType(entToType(lstatSync(entry.fullpath())))
       return entry
     } catch (er) {
       this.lstatFail(entry, er as NodeJS.ErrnoException)
     }
   }
 
+  // move to Path
   lstatFail(entry: PathBase, er: NodeJS.ErrnoException) {
     if (er.code === 'ENOTDIR') {
-      this.markENOTDIR(this.parent(entry))
+      this.markENOTDIR(entry.parent || entry)
     } else if (er.code === 'ENOENT') {
       this.markENOENT(entry)
     }
   }
 
+  // move to Path
   cannotReadlink(entry: PathBase): boolean {
+    if (!entry.parent) return false
     const t = entry.getType()
     // cases where it cannot possibly succeed
     return (
@@ -732,6 +792,8 @@ abstract class PathWalkerBase {
     )
   }
 
+  // take string or Path, move impl details to Path
+  // take {withFileTypes:boolean} arg, return string if false, else PathBase
   async readlink(entry: PathBase): Promise<PathBase | undefined> {
     const target = entry.linkTarget
     if (target) {
@@ -740,16 +802,15 @@ abstract class PathWalkerBase {
     if (this.cannotReadlink(entry)) {
       return undefined
     }
-    const p = this.parent(entry)
-    const fp = this.fullpath(entry)
+    const p = entry.parent
     /* c8 ignore start */
-    // already covered by the cannotReadlink test
-    if (!fp || !p) {
+    // already covered by the cannotReadlink test, here for ts grumples
+    if (!p) {
       return undefined
     }
     /* c8 ignore stop */
     try {
-      const read = await readlink(fp)
+      const read = await readlink(entry.fullpath())
       const linkTarget = p.resolve(read)
       if (linkTarget) {
         return (entry.linkTarget = linkTarget)
@@ -760,6 +821,7 @@ abstract class PathWalkerBase {
     }
   }
 
+  // move to Path
   readlinkFail(entry: PathBase, er: NodeJS.ErrnoException) {
     let ter: number = ENOREADLINK | (er.code === 'ENOENT' ? ENOENT : 0)
     if (er.code === 'EINVAL') {
@@ -767,12 +829,14 @@ abstract class PathWalkerBase {
       // all IFMT bits.
       ter &= IFMT_UNKNOWN
     }
-    if (er.code === 'ENOTDIR') {
-      this.markENOTDIR(this.parent(entry))
+    if (er.code === 'ENOTDIR' && entry.parent) {
+      this.markENOTDIR(entry.parent)
     }
     entry.addType(ter)
   }
 
+  // take string or Path, move impl details to Path
+  // take {withFileTypes:boolean} arg, return string if false
   readlinkSync(entry: PathBase): PathBase | undefined {
     const target = entry.linkTarget
     if (target) {
@@ -781,16 +845,15 @@ abstract class PathWalkerBase {
     if (this.cannotReadlink(entry)) {
       return undefined
     }
-    const p = this.parent(entry)
-    const fp = this.fullpath(entry)
+    const p = entry.parent
     /* c8 ignore start */
-    // already covered by the cannotReadlink test
-    if (!fp || !p) {
+    // already covered by the cannotReadlink test, here for ts grumples
+    if (!p) {
       return undefined
     }
     /* c8 ignore stop */
     try {
-      const read = readlinkSync(fp)
+      const read = readlinkSync(entry.fullpath())
       const linkTarget = p.resolve(read)
       if (linkTarget) {
         return (entry.linkTarget = linkTarget)
@@ -811,9 +874,10 @@ abstract class PathWalkerBase {
 export class PathWalkerWin32 extends PathWalkerBase {
   // defaults to case-insensitive
   nocase: boolean = true
+  sep: '\\' = '\\'
 
   constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
-    super(cwd, win32, opts)
+    super(cwd, win32, '\\', opts)
     const { nocase = this.nocase } = opts
     this.nocase = nocase
   }
@@ -824,8 +888,8 @@ export class PathWalkerWin32 extends PathWalkerBase {
     // In that case, mount \ on the root from the cwd.
     const rootPath = win32.parse(dir).root
     const driveFromUNC = uncToDrive(rootPath)
-    if (driveFromUNC === sep) {
-      return driveCwd(win32.resolve(driveFromUNC)) + sep
+    if (driveFromUNC === this.sep) {
+      return driveCwd(win32.resolve(driveFromUNC)) + this.sep
     } else {
       return driveFromUNC
     }
@@ -852,8 +916,9 @@ export class PathWalkerWin32 extends PathWalkerBase {
 // posix paths, default nocase=false
 export class PathWalkerPosix extends PathWalkerBase {
   nocase: boolean = false
+  sep: '/' = '/'
   constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
-    super(cwd, posix, opts)
+    super(cwd, posix, '/', opts)
     const { nocase = this.nocase } = opts
     this.nocase = nocase
   }
@@ -886,7 +951,14 @@ export class PathWalkerDarwin extends PathWalkerPosix {
   }
 }
 
-export const PathWalker =
+// default forms for the current platform
+export const Path: typeof PathWin32 | typeof PathPosix =
+  process.platform === 'win32' ? PathWin32 : PathPosix
+
+export const PathWalker:
+  | typeof PathWalkerWin32
+  | typeof PathWalkerDarwin
+  | typeof PathWalkerPosix =
   process.platform === 'win32'
     ? PathWalkerWin32
     : process.platform === 'darwin'
