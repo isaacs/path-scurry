@@ -447,7 +447,8 @@ export class PathPosix extends PathBase {
   }
 }
 
-export const Path = process.platform === 'win32' ? PathWin32 : PathPosix
+export const Path: typeof PathWin32 | typeof PathPosix =
+  process.platform === 'win32' ? PathWin32 : PathPosix
 
 export interface PathWalkerOpts {
   nocase?: boolean
