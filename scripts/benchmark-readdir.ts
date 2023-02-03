@@ -1,24 +1,39 @@
 #!/usr/bin/env node --expose_gc --loader=ts-node/esm
 
-import { Dir, Dirent, opendirSync, readdirSync, writeFileSync } from 'fs'
-import { opendir, readdir } from 'fs/promises'
+import { Dir, Dirent, opendirSync, writeFileSync } from 'fs'
+import { opendir } from 'fs/promises'
 import { mkdirpSync } from 'mkdirp'
 import { resolve } from 'path'
+// import { rimrafSync } from 'rimraf'
 
 // depth to go in
-const D = 4
+const D = 6
 // count of items to put in each folder
 const C = 10
+// max number of things to make, in total
+const max: number = +process.argv[2] || 100_000
+let totalCreated = 0
 const setup = (
   dir: string,
   d: number = D,
   c: number = C,
   dirs: string[] = []
 ) => {
+  if (totalCreated === max) {
+    return
+  }
   if (d === 0) {
     mkdirpSync(dir)
+    totalCreated++
+    if (totalCreated === max) {
+      return
+    }
     for (let i = 0; i < c; i++) {
       writeFileSync(`${dir}/${i}${i}`, '')
+      totalCreated++
+      if (totalCreated === max) {
+        return
+      }
     }
     return
   }
@@ -28,14 +43,14 @@ const setup = (
 }
 
 const dir = resolve(__dirname) + '/fixture'
+// rimrafSync(dir)
 setup(dir)
-// process.on('exit', () => rimrafSync(dir))
 
-import { PathBase, PathWalker } from '../'
+import { Path, PathWalker } from '../'
 
 const walkFreshPWSyncRecurse = (done: () => any) => {
   const pw = new PathWalker(dir)
-  const walk = (p: PathBase) => {
+  const walk = (p: Path) => {
     for (const path of pw.readdirSync(p)) {
       walk(path)
     }
@@ -61,7 +76,7 @@ const walkFreshPWSyncRecurse = (done: () => any) => {
 
 const walkFreshPWAsyncRecurse = (done: () => any) => {
   const pw = new PathWalker(dir)
-  const walk = async (p: PathBase) => {
+  const walk = async (p: Path) => {
     const promises: Promise<void>[] = []
     for (const path of await pw.readdir(p)) {
       promises.push(walk(path))
@@ -87,7 +102,7 @@ const walkFreshPWAsyncRecurse = (done: () => any) => {
 
 const pwAsync = new PathWalker(dir)
 const walkReusePWAsyncRecurse = (done: () => any) => {
-  const walk = async (p: PathBase) => {
+  const walk = async (p: Path) => {
     const promises: Promise<void>[] = []
     for (const path of await pwAsync.readdir(p)) {
       promises.push(walk(path))
@@ -112,7 +127,7 @@ const walkReusePWAsyncRecurse = (done: () => any) => {
 
 const pwSync = new PathWalker(dir)
 const walkReusePWSyncRecurse = (done: () => any) => {
-  const walk = (p: PathBase) => {
+  const walk = (p: Path) => {
     for (const path of pwSync.readdirSync(p)) {
       walk(path)
     }
@@ -135,17 +150,17 @@ const walkReusePWSyncRecurse = (done: () => any) => {
 //   done()
 // }
 
-//const walkFsReaddirAsyncRecurse = (done: () => any) => {
-//  const walk = async (p: string) => {
-//    const entries = await readdir(dir, { withFileTypes: true })
-//    const promises:Promise<void>[] = []
-//    for (const entry of entries) {
-//      promises.push(walk(resolve(p, entry.name)))
-//    }
-//    await Promise.all(promises)
-//  }
-//  walk(dir).then(done)
-//}
+// const walkFsReaddirAsyncRecurse = (done: () => any) => {
+//   const walk = async (p: string) => {
+//     const entries = await readdir(dir, { withFileTypes: true })
+//     const promises: Promise<void>[] = []
+//     for (const entry of entries) {
+//       promises.push(walk(resolve(p, entry.name)))
+//     }
+//     return Promise.all(promises).then(() => {})
+//   }
+//   walk(dir).then(done)
+// }
 
 // const walkFsReaddirAsyncIterate = (done: () => any) => {
 //   const walk = async (p: string) => {
@@ -162,21 +177,21 @@ const walkReusePWSyncRecurse = (done: () => any) => {
 //   walk(dir).then(done)
 // }
 
-const walkFsReaddirSyncRecurse = (done: () => any) => {
-  const walk = (p: string) => {
-    let entries: Dirent[]
-    try {
-      entries = readdirSync(dir, { withFileTypes: true })
-    } catch (_) {
-      entries = []
-    }
-    for (const entry of entries) {
-      walk(resolve(p, entry.name))
-    }
-  }
-  walk(dir)
-  done()
-}
+// const walkFsReaddirSyncRecurse = (done: () => any) => {
+//   const walk = (p: string) => {
+//     let entries: Dirent[]
+//     try {
+//       entries = readdirSync(dir, { withFileTypes: true })
+//     } catch (_) {
+//       entries = []
+//     }
+//     for (const entry of entries) {
+//       walk(resolve(p, entry.name))
+//     }
+//   }
+//   walk(dir)
+//   done()
+// }
 
 const walkFsOpendirAsyncRecurse = (done: () => any) => {
   const walk = async (p: string) => {
@@ -276,7 +291,7 @@ const run = async (fn: (done: () => void) => void) => {
     for (let i = 0; i < N; i++) {
       await new Promise<void>(res => fn(res))
     }
-    count += N * 111111
+    count += N * totalCreated
   }
   const elapsed = performance.now() - start
   gc && gc()
@@ -285,12 +300,14 @@ const run = async (fn: (done: () => void) => void) => {
 }
 
 const cases: [string, (done: () => void) => void][] = [
+  //['recursive fs readdir async', walkFsReaddirAsyncRecurse],
+
   ['recursive fresh PW async', walkFreshPWAsyncRecurse],
   ['recursive reuse PW async', walkReusePWAsyncRecurse],
-  ['recursive fs opendir async', walkFsOpendirAsyncRecurse],
 
   ['recursive fresh PW sync', walkFreshPWSyncRecurse],
   ['recursive reuse PW sync', walkReusePWSyncRecurse],
+  ['recursive fs opendir async', walkFsOpendirAsyncRecurse],
   ['recursive fs opendir sync', walkFsOpendirSyncRecurse],
 
   // the iterative approaches are super slow, don't even bother
@@ -303,7 +320,6 @@ const cases: [string, (done: () => void) => void][] = [
 
   // these crash with OOM errors because too much GC
   // using the dir iterator is super worthwhile.
-  // ['recursive fs readdir async', walkFsReaddirAsyncRecurse],
   // ['recursive fs readdir sync', walkFsReaddirSyncRecurse],
   // ['iterative fs readdir async', walkFsReaddirAsyncIterate],
 ]

@@ -1,11 +1,3 @@
-// TODO: move most/all of this logic over to the Path class.
-// The PathWalker should operate on *strings*, and the Paths should
-// operate on *Paths*, should be a good blend of performance and
-// usability.
-//
-// so PathWalker.dirname(str) returns
-// PathWalker.cwd().resolve(dir).parent.fullpath()
-
 import LRUCache from 'lru-cache'
 import { posix, win32 } from 'path'
 
@@ -13,17 +5,6 @@ import { lstatSync, readdirSync, readlinkSync } from 'fs'
 import { lstat, readdir, readlink } from 'fs/promises'
 
 import { Dirent, Stats } from 'fs'
-
-// function* syncDirIterate(dir: Dir) {
-//   let e
-//   try {
-//     while ((e = dir.readSync())) {
-//       yield e
-//     }
-//   } finally {
-//     dir.closeSync()
-//   }
-// }
 
 // turn something like //?/c:/ into c:\
 const uncDriveRegexp = /^\\\\\?\\([a-z]:)\\?$/
@@ -35,22 +16,6 @@ const uncToDrive = (rootPath: string): string =>
 const driveCwd = (c: string): string =>
   (c.match(/^([a-z]):(?:\\|\/|$)/)?.[1] || '') + '\\'
 const eitherSep = /[\\\/]/
-
-// a PathWalker has a PointerSet with the following setup:
-// - value: the string representing the path portion, using
-//   `/` for posix root paths.
-// - type: a raw uint32 field:
-//    - low 4 bits are the S_IFMT nibble, or 0 for "unknown"
-//    - remaining bits are used for various helpful flags.
-// - parent: pointer to parent directory
-// - children: array of provisional and known child entries
-// - provisional: index in the array of the first provisional child
-//   0 until a successful readdir with entries.
-// - linkTarget: pointer to path entry that symlink references, if known
-//
-// Each PathWalker has a single root, but they can share the same store,
-// so you could potentially have multiple entries in the store that are
-// parentless, even though each PathWalker only has a single root entry.
 
 const UNKNOWN = 0 // may not even exist, for all we know
 const IFIFO = 0b0001
@@ -94,69 +59,58 @@ const entToType = (s: Dirent | Stats) =>
     ? IFIFO
     : UNKNOWN
 
-// TODO
-// Non-PointerSet approach:
-// each "Path" is:
-// {
-//   name: string (no separators, just a single portion)
-//   fullpath?: string (cached resolve())
-//   type: number (uint32 of flags)
-//   parent?: Path
-//   children: Path[]
-//   provisional: number
-//   linkTarget?: Path
-// }
-//
-// The PathWalker has a reference to the roots it's seen (which there will only
-// be one of on Posix systems, but on Windows could be any number), and all the
-// methods for operating on Path objects.
-//
-// The operations are essentially the same, but instead of taking a Pointer,
-// they receive a Path object, and instead of doing stuff like:
-// `this.store.ref(pointer, field, otherPointer)` it just does:
-// `path[field] = otherPath`.
-//
-// So we still do each operation exactly once, and a given resolved path string
-// always points to the same Path object. And hopefully, the GC won't be so
-// terrible, because the entire graph can be pruned at once.
-//
-// A next step, if gc IS an issue, is to try storing all the Path objects in an
-// array, and replacing the Path references to numeric indexes into that array.
-// Then each Path would only ever be referenced by the array, and as long as
-// none of them make it to old object generation, we should be good there.
-
 interface PathOpts {
   fullpath?: string
   parent?: PathBase
-  children?: PathBase[]
-  provisional?: number
-  linkTarget?: PathBase
 }
 
-class ResolveCache extends LRUCache<string, PathBase> {
+class ResolveCache<T> extends LRUCache<string, T> {
   constructor() {
     super({ max: 256 })
   }
 }
 
+// In order to prevent blowing out the js heap by allocating hundreds of
+// thousands of Path entries when walking extremely large trees, the "children"
+// in this tree are represented by storing an array of Path entries in an
+// LRUCache, indexed by the parent.  At any time, Path.children() may return an
+// empty array, indicating that it doesn't know about any of its children, and
+// thus has to rebuild that cache.  This is fine, it just means that we don't
+// benefit as much from having the cached entries, but huge directory walks
+// don't blow out the stack, and smaller ones are still as fast as possible.
+//
+//It does impose some complexity when building up the readdir data, because we
+//need to pass a reference to the children array that we started with.
+
+class ChildrenCache extends LRUCache<PathBase, Children> {
+  constructor(maxSize: number = 16 * 1024) {
+    super({
+      maxSize,
+      // parent + children
+      sizeCalculation: a => a.length + 1,
+    })
+  }
+}
+
+type Children = PathBase[] & { provisional: number }
+
 // Path objects are sort of like a super powered Dirent
 export abstract class PathBase implements Dirent {
   name: string
-  matchName: string
-  #fullpath?: string
-  #type: number
-  nocase: boolean
-  abstract splitSep: string | RegExp
-  abstract sep: string
-
-  cache: ResolveCache
   root: PathBase
   roots: { [k: string]: PathBase }
   parent?: PathBase
-  // TODO: test replacing linked list with Path[], indexes with numbers
-  children: PathBase[] = []
-  provisional: number = 0
-  linkTarget?: PathBase
+  nocase: boolean
+
+  abstract splitSep: string | RegExp
+  abstract sep: string
+
+  #matchName: string
+  #fullpath?: string
+  #type: number
+  #resolveCache: ResolveCache<PathBase>
+  #children: ChildrenCache
+  #linkTarget?: PathBase
 
   constructor(
     name: string,
@@ -164,16 +118,18 @@ export abstract class PathBase implements Dirent {
     root: PathBase | undefined,
     roots: { [k: string]: PathBase },
     nocase: boolean,
+    children: ChildrenCache,
     opts: PathOpts
   ) {
     this.name = name
 
-    this.matchName = nocase ? name.toLowerCase() : name
+    this.#matchName = nocase ? name.toLowerCase() : name
     this.#type = type & TYPEMASK
     this.nocase = nocase
     this.roots = roots
     this.root = root || this
-    this.cache = new ResolveCache()
+    this.#resolveCache = new ResolveCache()
+    this.#children = children
     Object.assign(this, opts)
   }
 
@@ -181,12 +137,16 @@ export abstract class PathBase implements Dirent {
   abstract getRoot(rootPath: string): PathBase
   abstract newChild(name: string, type?: number, opts?: PathOpts): PathBase
 
+  childrenCache() {
+    return this.#children
+  }
+
   // walk down to a single path, and return the final PathBase object created
   resolve(path?: string): PathBase {
     if (!path) {
       return this
     }
-    const cached = this.cache.get(path)
+    const cached = this.#resolveCache.get(path)
     if (cached) {
       return cached
     }
@@ -194,18 +154,29 @@ export abstract class PathBase implements Dirent {
     const dir = path.substring(rootPath.length)
     const dirParts = dir.split(this.splitSep)
     const result: PathBase = rootPath
-      ? this.getRoot(rootPath).resolveParts(dirParts)
-      : this.resolveParts(dirParts)
-    this.cache.set(path, result)
+      ? this.getRoot(rootPath).#resolveParts(dirParts)
+      : this.#resolveParts(dirParts)
+    this.#resolveCache.set(path, result)
     return result
   }
 
-  resolveParts(dirParts: string[]) {
+  #resolveParts(dirParts: string[]) {
     let p: PathBase = this
     for (const part of dirParts) {
       p = p.child(part)
     }
     return p
+  }
+
+  children(): Children {
+    const cached = this.#children.get(this)
+    if (cached) {
+      return cached
+    }
+    const children: Children = Object.assign([], { provisional: 0 })
+    this.#children.set(this, children)
+    this.#type &= ~READDIR_CALLED
+    return children
   }
 
   child(pathPart: string): PathBase {
@@ -217,10 +188,10 @@ export abstract class PathBase implements Dirent {
     }
 
     // find the child
-    const { children } = this
+    const children = this.children()
     const name = this.nocase ? pathPart.toLowerCase() : pathPart
     for (const p of children) {
-      if (p.matchName === name) {
+      if (p.#matchName === name) {
         return p
       }
     }
@@ -236,15 +207,12 @@ export abstract class PathBase implements Dirent {
     pchild.parent = this
     pchild.#fullpath = fullpath
 
-    if (this.cannotReaddir()) {
-      pchild.setType(ENOENT)
+    if (this.#cannotReaddir()) {
+      pchild.#type |= ENOENT
     }
 
-    // have children, just not provisional children
-    // or first child, of any kind, is provisional
-    if (this.provisional < children.length) {
-      this.provisional = children.length
-    }
+    // don't have to update provisional, because if we have real children,
+    // then provisional is set to children.length, otherwise a lower number
     children.push(pchild)
     return pchild
   }
@@ -263,46 +231,35 @@ export abstract class PathBase implements Dirent {
     return (this.#fullpath = fp)
   }
 
-  getType(): number {
-    return this.#type
-  }
-  setType(type: number): number {
-    return (this.#type = type & TYPEMASK)
-  }
-  addType(type: number): number {
-    return (this.#type |= type & TYPEMASK)
-  }
-
   isUnknown(): boolean {
-    return (this.getType() && IFMT) === UNKNOWN
+    return (this.#type && IFMT) === UNKNOWN
   }
   isFile(): boolean {
-    return (this.getType() & IFMT) === IFREG
+    return (this.#type & IFMT) === IFREG
   }
   // a directory, or a symlink to a directory
   isDirectory(): boolean {
-    return (this.getType() & IFMT) === IFDIR
+    return (this.#type & IFMT) === IFDIR
   }
   isCharacterDevice(): boolean {
-    return (this.getType() & IFMT) === IFCHR
+    return (this.#type & IFMT) === IFCHR
   }
   isBlockDevice(): boolean {
-    return (this.getType() & IFMT) === IFBLK
+    return (this.#type & IFMT) === IFBLK
   }
   isFIFO(): boolean {
-    return (this.getType() & IFMT) === IFIFO
+    return (this.#type & IFMT) === IFIFO
   }
   isSocket(): boolean {
-    return (this.getType() & IFMT) === IFSOCK
+    return (this.#type & IFMT) === IFSOCK
   }
 
   // we know it is a symlink
   isSymbolicLink(): boolean {
-    return (this.getType() & IFLNK) === IFLNK
+    return (this.#type & IFLNK) === IFLNK
   }
 
-  // TODO: make private once readdir() refactors over
-  cannotReaddir() {
+  #cannotReaddir() {
     if (this.#type & ENOCHILD) return true
     const ifmt = this.#type & IFMT
     // if we know it's not a dir or link, don't even try
@@ -310,11 +267,11 @@ export abstract class PathBase implements Dirent {
   }
 
   async readlink(): Promise<PathBase | undefined> {
-    const target = this.linkTarget
+    const target = this.#linkTarget
     if (target) {
       return target
     }
-    if (this.cannotReadlink()) {
+    if (this.#cannotReadlink()) {
       return undefined
     }
     /* c8 ignore start */
@@ -327,20 +284,20 @@ export abstract class PathBase implements Dirent {
       const read = await readlink(this.fullpath())
       const linkTarget = this.parent.resolve(read)
       if (linkTarget) {
-        return (this.linkTarget = linkTarget)
+        return (this.#linkTarget = linkTarget)
       }
     } catch (er) {
-      this.readlinkFail(er as NodeJS.ErrnoException)
+      this.#readlinkFail(er as NodeJS.ErrnoException)
       return undefined
     }
   }
 
   readlinkSync(): PathBase | undefined {
-    const target = this.linkTarget
+    const target = this.#linkTarget
     if (target) {
       return target
     }
-    if (this.cannotReadlink()) {
+    if (this.#cannotReadlink()) {
       return undefined
     }
     /* c8 ignore start */
@@ -353,16 +310,15 @@ export abstract class PathBase implements Dirent {
       const read = readlinkSync(this.fullpath())
       const linkTarget = this.parent.resolve(read)
       if (linkTarget) {
-        return (this.linkTarget = linkTarget)
+        return (this.#linkTarget = linkTarget)
       }
     } catch (er) {
-      this.readlinkFail(er as NodeJS.ErrnoException)
+      this.#readlinkFail(er as NodeJS.ErrnoException)
       return undefined
     }
   }
 
-  // TODO: make private once readlink() refactors over
-  cannotReadlink(): boolean {
+  #cannotReadlink(): boolean {
     if (!this.parent) return false
     // cases where it cannot possibly succeed
     const ifmt = this.#type & IFMT
@@ -373,42 +329,37 @@ export abstract class PathBase implements Dirent {
     )
   }
 
-  calledReaddir(): boolean {
+  #calledReaddir(): boolean {
     return (this.#type & READDIR_CALLED) === READDIR_CALLED
   }
 
-  cachedReaddir(): PathBase[] {
-    return this.children.slice(0, this.provisional)
-  }
-
-  readdirSuccess() {
+  #readdirSuccess(children: Children) {
     // succeeded, mark readdir called bit
-    this.addType(READDIR_CALLED)
+    this.#type |= READDIR_CALLED
     // mark all remaining provisional children as ENOENT
-    for (let p = this.provisional; p < this.children.length; p++) {
-      this.children[p].markENOENT()
+    for (let p = children.provisional; p < children.length; p++) {
+      children[p].#markENOENT()
     }
   }
 
-  markENOENT() {
+  #markENOENT() {
     // mark as UNKNOWN and ENOENT
     if (this.#type & ENOENT) return
     this.#type = (this.#type | ENOENT) & IFMT_UNKNOWN
-    this.markChildrenENOENT()
+    this.#markChildrenENOENT()
   }
 
-  markChildrenENOENT() {
-    // all children are provisional
-    this.provisional = 0
-
-    // all children do not exist
-    for (const p of this.children) {
-      p.markENOENT()
+  #markChildrenENOENT() {
+    // all children are provisional and do not exist
+    const children = this.children()
+    children.provisional = 0
+    for (const p of children) {
+      p.#markENOENT()
     }
   }
 
   // save the information when we know the entry is not a dir
-  markENOTDIR() {
+  #markENOTDIR() {
     // entry is not a directory, so any children can't exist.
     // if it's already marked ENOTDIR, bail
     if (this.#type & ENOTDIR) return
@@ -417,29 +368,30 @@ export abstract class PathBase implements Dirent {
     // then try to read it or one of its children.
     if ((t & IFMT) === IFDIR) t &= IFMT_UNKNOWN
     this.#type = t | ENOTDIR
-    this.markChildrenENOENT()
+    this.#markChildrenENOENT()
   }
 
-  readdirFail(er: NodeJS.ErrnoException) {
+  #readdirFail(er: NodeJS.ErrnoException) {
     if (er.code === 'ENOTDIR' || er.code === 'EPERM') {
-      this.markENOTDIR()
+      this.#markENOTDIR()
     }
     if (er.code === 'ENOENT') {
-      this.markENOENT()
+      this.#markENOENT()
+    } else {
+      this.children().provisional = 0
     }
-    this.provisional = 0
   }
 
-  lstatFail(er: NodeJS.ErrnoException) {
+  #lstatFail(er: NodeJS.ErrnoException) {
     if (er.code === 'ENOTDIR') {
       const e = this.parent || this
-      e.markENOTDIR()
+      e.#markENOTDIR()
     } else if (er.code === 'ENOENT') {
-      this.markENOENT()
+      this.#markENOENT()
     }
   }
 
-  readlinkFail(er: NodeJS.ErrnoException) {
+  #readlinkFail(er: NodeJS.ErrnoException) {
     let ter = this.#type
     ter |= ENOREADLINK
     if (er.code === 'ENOENT') ter |= ENOENT
@@ -450,67 +402,73 @@ export abstract class PathBase implements Dirent {
     }
     this.#type = ter
     if (er.code === 'ENOTDIR' && this.parent) {
-      this.parent.markENOTDIR()
+      this.parent.#markENOTDIR()
     }
   }
 
-  readdirAddChild(e: Dirent) {
-    return this.readdirMaybePromoteChild(e) || this.readdirAddNewChild(e)
+  #readdirAddChild(e: Dirent, c: Children) {
+    return (
+      this.#readdirMaybePromoteChild(e, c) ||
+      this.#readdirAddNewChild(e, c)
+    )
   }
 
   // TODO: mark private once readdir factors over
-  readdirAddNewChild(e: Dirent): PathBase {
+  #readdirAddNewChild(e: Dirent, c: Children): PathBase {
     // alloc new entry at head, so it's never provisional
-    const { children } = this
     const type = entToType(e)
     const child = this.newChild(e.name, type, { parent: this })
-    children.unshift(child)
-    this.provisional++
+    c.unshift(child)
+    c.provisional++
     return child
   }
 
   // TODO: mark private once readdir factors over
-  readdirMaybePromoteChild(e: Dirent): PathBase | undefined {
-    const { children, provisional } = this
-    for (let p = provisional; p < children.length; p++) {
-      const pchild = children[p]
+  #readdirMaybePromoteChild(e: Dirent, c: Children): PathBase | undefined {
+    for (let p = c.provisional; p < c.length; p++) {
+      const pchild = c[p]
       const name = this.nocase ? e.name.toLowerCase() : e.name
-      if (name !== pchild.matchName) {
+      if (name !== pchild.#matchName) {
         continue
       }
 
-      return this.readdirPromoteChild(e, pchild, p)
+      return this.#readdirPromoteChild(e, pchild, p, c)
     }
   }
 
   // TODO: make private once all of readdir factors over
-  readdirPromoteChild(e: Dirent, p: PathBase, index: number): PathBase {
-    const { children, provisional } = this
+  #readdirPromoteChild(
+    e: Dirent,
+    p: PathBase,
+    index: number,
+    c: Children
+  ): PathBase {
     const v = p.name
-    const type = entToType(e)
-
-    p.setType(type)
+    p.#type = entToType(e)
     // case sensitivity fixing when we learn the true name.
     if (v !== e.name) p.name = e.name
 
     // just advance provisional index (potentially off the list),
     // otherwise we have to splice/pop it out and re-insert at head
-    if (index !== provisional) {
-      if (index === children.length - 1) this.children.pop()
-      else this.children.splice(index, 1)
-      this.children.unshift(p)
+    if (index !== c.provisional) {
+      if (index === c.length - 1) c.pop()
+      else c.splice(index, 1)
+      c.unshift(p)
     }
-    this.provisional++
+    c.provisional++
     return p
   }
 
   async lstat(): Promise<PathBase | undefined> {
     if ((this.#type & ENOENT) === 0) {
       try {
-        this.setType(entToType(await lstat(this.fullpath())))
+        // retain any other flags, but set the ifmt
+        this.#type =
+          (this.#type & IFMT_UNKNOWN) |
+          entToType(await lstat(this.fullpath()))
         return this
       } catch (er) {
-        this.lstatFail(er as NodeJS.ErrnoException)
+        this.#lstatFail(er as NodeJS.ErrnoException)
       }
     }
   }
@@ -518,106 +476,82 @@ export abstract class PathBase implements Dirent {
   lstatSync(): PathBase | undefined {
     if ((this.#type & ENOENT) === 0) {
       try {
-        this.setType(entToType(lstatSync(this.fullpath())))
+        // retain any other flags, but set the ifmt
+        this.#type =
+          (this.#type & IFMT_UNKNOWN) |
+          entToType(lstatSync(this.fullpath()))
         return this
       } catch (er) {
-        this.lstatFail(er as NodeJS.ErrnoException)
+        this.#lstatFail(er as NodeJS.ErrnoException)
       }
     }
   }
 
   readdirSync(): PathBase[] {
-    if (this.cannotReaddir()) {
+    if (this.#cannotReaddir()) {
       return []
     }
 
-    if (this.calledReaddir()) {
-      return this.cachedReaddir()
-      // for (const e of this.cachedReaddir()) yield e
-      // return
+    const children = this.children()
+    if (this.#calledReaddir()) {
+      return children.slice(0, children.provisional)
     }
 
     // else read the directory, fill up children
     // de-provisionalize any provisional children.
     const fullpath = this.fullpath()
-    let finished = false
     try {
       for (const e of readdirSync(fullpath, { withFileTypes: true })) {
-        this.readdirAddChild(e)
+        this.#readdirAddChild(e, children)
       }
-      // const dir = opendirSync(fullpath)
-      // for (const e of syncDirIterate(dir)) {
-      //   const p = this.readdirAddChild(e)
-      //   yield p
-      // }
-      finished = true
+      this.#readdirSuccess(children)
     } catch (er) {
-      this.readdirFail(er as NodeJS.ErrnoException)
-    } finally {
-      if (finished) {
-        this.readdirSuccess()
-      } else {
-        // all refs must be considered provisional now, since it was
-        // cancelled, but didn't actually fail.
-        this.provisional = 0
-      }
-      return this.cachedReaddir()
+      this.#readdirFail(er as NodeJS.ErrnoException)
+      children.provisional = 0
     }
+    return children.slice(0, children.provisional)
   }
 
   async readdir(): Promise<PathBase[]> {
-    if (this.cannotReaddir()) {
+    if (this.#cannotReaddir()) {
       return []
     }
 
-    if (this.calledReaddir()) {
-      return this.cachedReaddir()
+    const children = this.children()
+    if (this.#calledReaddir()) {
+      return children.slice(0, children.provisional)
     }
 
     // else read the directory, fill up children
     // de-provisionalize any provisional children.
     const fullpath = this.fullpath()
-    let finished = false
     try {
-      // iterators are cool, and this does have the shortcoming
-      // of falling over on dirs with *massive* amounts of entries,
-      // but async iterators are just too slow by comparison.
-      // const dir = await opendir(fullpath)
-      // for await (const e of dir) {
-      //   yield this.readdirAddChild(e)
-      // }
       for (const e of await readdir(fullpath, { withFileTypes: true })) {
-        this.readdirAddChild(e)
+        this.#readdirAddChild(e, children)
       }
-      finished = true
+      this.#readdirSuccess(children)
     } catch (er) {
-      this.readdirFail(er as NodeJS.ErrnoException)
-    } finally {
-      if (finished) {
-        this.readdirSuccess()
-      } else {
-        // all refs must be considered provisional, since it did not
-        // complete.  but if we haven't gotten any children, then it's
-        // still 0.
-        this.provisional = 0
-      }
+      this.#readdirFail(er as NodeJS.ErrnoException)
+      children.provisional = 0
     }
-    return this.cachedReaddir()
+    return children.slice(0, children.provisional)
   }
 }
 
 export class PathWin32 extends PathBase {
   sep: '\\' = '\\'
   splitSep: RegExp = eitherSep
+
   constructor(
     name: string,
     type: number = UNKNOWN,
     root: PathBase | undefined,
     roots: { [k: string]: PathBase },
     nocase: boolean = true,
+    children: ChildrenCache,
     opts: PathOpts
   ) {
-    super(name, type, root, roots, nocase, opts)
+    super(name, type, root, roots, nocase, children, opts)
   }
 
   newChild(name: string, type: number = UNKNOWN, opts: PathOpts = {}) {
@@ -627,6 +561,7 @@ export class PathWin32 extends PathBase {
       this.root,
       this.roots,
       this.nocase,
+      this.childrenCache(),
       opts
     )
   }
@@ -671,9 +606,10 @@ export class PathPosix extends PathBase {
     root: PathBase | undefined,
     roots: { [k: string]: PathBase },
     nocase: boolean = false,
+    children: ChildrenCache,
     opts: PathOpts
   ) {
-    super(name, type, root, roots, nocase, opts)
+    super(name, type, root, roots, nocase, children, opts)
   }
 
   getRootString(path: string): string {
@@ -691,6 +627,7 @@ export class PathPosix extends PathBase {
       this.root,
       this.roots,
       this.nocase,
+      this.childrenCache(),
       opts
     )
   }
@@ -699,8 +636,7 @@ export class PathPosix extends PathBase {
 export interface PathWalkerOpts {
   nocase?: boolean
   roots?: { [k: string]: PathBase }
-  cache?: LRUCache<string, PathBase>
-  platform?: string
+  childrenCacheSize?: number
 }
 
 abstract class PathWalkerBase {
@@ -709,7 +645,8 @@ abstract class PathWalkerBase {
   roots: { [k: string]: PathBase }
   cwd: PathBase
   cwdPath: string
-  cache: LRUCache<string, string>
+  #resolveCache: ResolveCache<string>
+  #children: ChildrenCache
   abstract nocase: boolean
   abstract sep: string | RegExp
 
@@ -717,14 +654,18 @@ abstract class PathWalkerBase {
     cwd: string = process.cwd(),
     pathImpl: typeof win32 | typeof posix,
     sep: string | RegExp,
-    { roots = Object.create(null) }: PathWalkerOpts = {}
+    {
+      roots = Object.create(null),
+      childrenCacheSize = 16 * 1024,
+    }: PathWalkerOpts = {}
   ) {
     // resolve and split root, and then add to the store.
     // this is the only time we call path.resolve()
     const cwdPath = pathImpl.resolve(cwd)
     this.cwdPath = cwdPath
     this.rootPath = this.parseRootPath(cwdPath)
-    this.cache = new LRUCache({ max: 256 })
+    this.#resolveCache = new ResolveCache()
+    this.#children = new ChildrenCache(childrenCacheSize)
 
     const split = cwdPath.substring(this.rootPath.length).split(sep)
     // resolve('/') leaves '', splits to [''], we don't want that.
@@ -751,6 +692,11 @@ abstract class PathWalkerBase {
   abstract newRoot(): PathBase
   abstract isAbsolute(p: string): boolean
 
+  // needed so subclasses can create Path objects
+  childrenCache() {
+    return this.#children
+  }
+
   // same interface as require('path').resolve
   resolve(...paths: string[]): string {
     // first figure out the minimum number of paths we have to test
@@ -764,12 +710,12 @@ abstract class PathWalkerBase {
         break
       }
     }
-    const cached = this.cache.get(r)
+    const cached = this.#resolveCache.get(r)
     if (cached !== undefined) {
       return cached
     }
     const result = this.cwd.resolve(r).fullpath()
-    this.cache.set(r, result)
+    this.#resolveCache.set(r, result)
     return result
   }
 
@@ -854,9 +800,6 @@ abstract class PathWalkerBase {
     } else {
       return entry.readdirSync().map(e => e.name)
     }
-    //for (const e of entry.readdirSync()) {
-    //  yield withFileTypes ? e : e.name
-    //}
   }
 
   // take either a string or Path, move implementation details to Path
@@ -961,6 +904,7 @@ export class PathWalkerWin32 extends PathWalkerBase {
       undefined,
       this.roots,
       this.nocase,
+      this.childrenCache(),
       {}
     )
   }
@@ -993,6 +937,7 @@ export class PathWalkerPosix extends PathWalkerBase {
       undefined,
       this.roots,
       this.nocase,
+      this.childrenCache(),
       {}
     )
   }
@@ -1005,14 +950,12 @@ export class PathWalkerPosix extends PathWalkerBase {
 // posix paths, default nocase=true
 export class PathWalkerDarwin extends PathWalkerPosix {
   nocase: boolean = true
-  constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
-    super(cwd, { ...opts, platform: 'darwin' })
-  }
 }
 
 // default forms for the current platform
-export const Path: typeof PathWin32 | typeof PathPosix =
+export const Path: typeof PathBase =
   process.platform === 'win32' ? PathWin32 : PathPosix
+export type Path = PathBase
 
 export const PathWalker:
   | typeof PathWalkerWin32
@@ -1023,3 +966,4 @@ export const PathWalker:
     : process.platform === 'darwin'
     ? PathWalkerDarwin
     : PathWalkerPosix
+export type PathWalker = PathWalkerBase

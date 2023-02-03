@@ -1,8 +1,8 @@
 # path-walker
 
-Extremely high performant lowlevel utility for building tools
-that walk the file system, minimizing filesystem and path string
-munging operations to the greatest degree possible.
+Extremely high performant utility for building tools that read
+the file system, minimizing filesystem and path string munging
+operations to the greatest degree possible.
 
 ## Ugh, yet another file traversal thing on npm?
 
@@ -21,60 +21,57 @@ folder tree, such that:
    `readdir()` or `stat()` covered the path, and
    `ent.isDirectory()` is false.)
 3. `path.resolve()`, `dirname()`, `basename()`, and other
-   string-parsing/munging operations are be minimized.  This
+   string-parsing/munging operations are be minimized. This
    means it has to track "provisional" child nodes that may not
    exist (and if we find that they _don't_ exist, store that
-   information as well).
+   information as well, so we don't have to ever check again).
 4. The results are _not_ represented as a stream, and do not
    require any sort of filter or decision functions. Every step
-   should be 100% deliberate.
-5. Despite the large amount of information being cached, avoid
-   creating a lot of objects that need to be garbage collected.
-   This means using an approach based on uint32 arrays of raw
-   integer data, bitshifting, pointers, and so on.
-
-Note that while these features make it a good fit where
-performance is the primary concern, that last two make it rather
-inconvenient for many higher-level use cases.
+   should be 100% deliberate, just like using the normal `fs`
+   operations.
+5. It's more important to prevent excess syscalls than to be up
+   to date, but it should be smart enough to know what it
+   _doesn't_ know, and go get it seamlessly when requested.
+6. Do not blow up the JS heap allocation if operating on a
+   directory with a huge number of entries.
 
 ## USAGE
 
-```js
+```ts
 // hybrid module, load with either method
-import { PathWalker } from 'path-walker'
+import { PathWalker, Path } from 'path-walker'
 // or:
-const { PathWalker } = require('path-walker')
-
-// give it a starting path initially
-// then call .child(part) to go to the next
-// step in the walk.
+const { PathWalker, Path } = require('path-walker')
 
 // very simple example, say we want to find and
 // delete all the .DS_Store files in a given path
+// note that the API is very similar to just a
+// naive walk with fs.readdir()
 import { unlink } from 'fs/promises'
-const walk = async (entry: Pointer) => {
-  const promises:Promise<any> = []
-  // readdir doesn't throw ENOTDIR on known non-directories,
-  // it just doesn't yield any entries, to save stack trace
-  // creation costs.
+const walk = async (entry: Path) => {
+  const promises: Promise<any> = []
+  // readdir doesn't throw on non-directories, it just doesn't
+  // return any entries, to save stack trace costs.
   // Items are returned in arbitrary unsorted order
-  for await (const child of pw.readdir(entry)) {
+  for (const child of await pw.readdir(entry)) {
     // each child is a uint32 pointer in a PointerSet
-    const basename = pw.basename(child)
-    if (basename === '.DS_Store' && pw.isFile(child)) {
-      promises.push(unlink(pw.fullpath(child)))
+    if (child.name === '.DS_Store' && child.isFile()) {
+      // could also do pw.resolve(entry, child.name),
+      // just like fs.readdir walking, but .fullpath is
+      // a *slightly* more efficient shorthand.
+      promises.push(unlink(child.fullpath()))
     } else {
-      promises.push(pw.walk(child, walk))
+      promises.push(walk(child))
     }
   }
   return Promise.all(promises)
 }
 const pw = new PathWalker(process.cwd())
-walk(pw.start).then(() => {
+walk(pw.cwd).then(() => {
   console.log('all .DS_Store files removed')
 })
 
 const pw2 = new PathWalker('/a/b/c')
-const relativeDir = pw2.resolve('../x') // pointer to entry for '/a/b/x'
-const relative2 = pw2.resolve('/a/b/d/../x') // same path, same pointer
+const relativeDir = pw2.cwd.resolve('../x') // pointer to entry for '/a/b/x'
+const relative2 = pw2.cwd.resolve('/a/b/d/../x') // same path, same pointer
 ```

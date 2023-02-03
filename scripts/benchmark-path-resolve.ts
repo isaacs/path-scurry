@@ -118,7 +118,7 @@ for (const [s, t] of cases) {
   console.log(`\r(${s}${t ? ',' + t : ''})`, {
     'path.win32.resolve()': format(prwin),
     'path.posix.resolve()': format(prnix),
-    'PathWalkerPosix': format(pwp),
-    'PathWalkerWin32': format(pww),
+    PathWalkerPosix: format(pwp),
+    PathWalkerWin32: format(pww),
   })
 }
