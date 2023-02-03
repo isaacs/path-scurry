@@ -59,7 +59,7 @@ const entToType = (s: Dirent | Stats) =>
     ? IFIFO
     : UNKNOWN
 
-interface PathOpts {
+export interface PathOpts {
   fullpath?: string
   parent?: PathBase
 }
@@ -639,7 +639,7 @@ export interface PathWalkerOpts {
   childrenCacheSize?: number
 }
 
-abstract class PathWalkerBase {
+export abstract class PathWalkerBase {
   root: PathBase
   rootPath: string
   roots: { [k: string]: PathBase }
