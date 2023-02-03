@@ -1,3 +1,5 @@
+#!/usr/bin/env node --expose_gc --loader=ts-node/esm
+
 import { Dir, Dirent, opendirSync, readdirSync, writeFileSync } from 'fs'
 import { opendir, readdir } from 'fs/promises'
 import { mkdirpSync } from 'mkdirp'
@@ -266,6 +268,7 @@ const walkFsOpendirSyncRecurse = (done: () => any) => {
 
 const N = 1
 const run = async (fn: (done: () => void) => void) => {
+  gc && gc()
   const start = performance.now()
   const e = start + 1000
   let count = 0

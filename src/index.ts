@@ -10,7 +10,7 @@ import LRUCache from 'lru-cache'
 import { posix, win32 } from 'path'
 
 import { Dir, lstatSync, opendirSync, readlinkSync } from 'fs'
-import { lstat, readdir, readlink } from 'fs/promises'
+import { lstat, opendir, readlink } from 'fs/promises'
 
 import { Dirent, Stats } from 'fs'
 
@@ -71,8 +71,8 @@ const ENOTDIR = 0b0010_0000
 // set if an entry (or one of its parents) does not exist
 // (can also be set on lstat errors like EACCES or ENAMETOOLONG)
 const ENOENT = 0b0100_0000
-// cannot have child entries
-const ENOCHILD = ENOTDIR | ENOENT | IFREG
+// cannot have child entries -- also verify &IFMT is either IFDIR or IFLNK
+const ENOCHILD = ENOTDIR | ENOENT
 // set if we fail to readlink
 const ENOREADLINK = 0b1000_0000
 const TYPEMASK = 0b1111_1111
@@ -179,6 +179,7 @@ export abstract class PathBase implements Dirent {
 
   abstract getRootString(path: string): string
   abstract getRoot(rootPath: string): PathBase
+  abstract newChild(name: string, type?: number, opts?: PathOpts): PathBase
 
   // walk down to a single path, and return the final PathBase object created
   resolve(path?: string): PathBase {
@@ -206,8 +207,6 @@ export abstract class PathBase implements Dirent {
     }
     return p
   }
-
-  abstract newChild(name: string, type?: number, opts?: PathOpts): PathBase
 
   child(pathPart: string): PathBase {
     if (pathPart === '' || pathPart === '.') {
@@ -237,7 +236,7 @@ export abstract class PathBase implements Dirent {
     pchild.parent = this
     pchild.#fullpath = fullpath
 
-    if (this.getType() & ENOCHILD) {
+    if (this.cannotReaddir()) {
       pchild.setType(ENOENT)
     }
 
@@ -300,6 +299,303 @@ export abstract class PathBase implements Dirent {
   // we know it is a symlink
   isSymbolicLink(): boolean {
     return (this.getType() & IFLNK) === IFLNK
+  }
+
+  // TODO: make private once readdir() refactors over
+  cannotReaddir() {
+    if (this.#type & ENOCHILD) return true
+    const ifmt = this.#type & IFMT
+    // if we know it's not a dir or link, don't even try
+    return !(ifmt === UNKNOWN || ifmt === IFDIR || ifmt === IFLNK)
+  }
+
+  async readlink(): Promise<PathBase | undefined> {
+    const target = this.linkTarget
+    if (target) {
+      return target
+    }
+    if (this.cannotReadlink()) {
+      return undefined
+    }
+    /* c8 ignore start */
+    // already covered by the cannotReadlink test, here for ts grumples
+    if (!this.parent) {
+      return undefined
+    }
+    /* c8 ignore stop */
+    try {
+      const read = await readlink(this.fullpath())
+      const linkTarget = this.parent.resolve(read)
+      if (linkTarget) {
+        return (this.linkTarget = linkTarget)
+      }
+    } catch (er) {
+      this.readlinkFail(er as NodeJS.ErrnoException)
+      return undefined
+    }
+  }
+
+  readlinkSync(): PathBase | undefined {
+    const target = this.linkTarget
+    if (target) {
+      return target
+    }
+    if (this.cannotReadlink()) {
+      return undefined
+    }
+    /* c8 ignore start */
+    // already covered by the cannotReadlink test, here for ts grumples
+    if (!this.parent) {
+      return undefined
+    }
+    /* c8 ignore stop */
+    try {
+      const read = readlinkSync(this.fullpath())
+      const linkTarget = this.parent.resolve(read)
+      if (linkTarget) {
+        return (this.linkTarget = linkTarget)
+      }
+    } catch (er) {
+      this.readlinkFail(er as NodeJS.ErrnoException)
+      return undefined
+    }
+  }
+
+  // TODO: make private once readlink() refactors over
+  cannotReadlink(): boolean {
+    if (!this.parent) return false
+    // cases where it cannot possibly succeed
+    const ifmt = this.#type & IFMT
+    return (
+      !!(ifmt !== UNKNOWN && ifmt !== IFLNK) ||
+      !!(this.#type & ENOREADLINK) ||
+      !!(this.#type & ENOENT)
+    )
+  }
+
+  calledReaddir(): boolean {
+    return (this.#type & READDIR_CALLED) === READDIR_CALLED
+  }
+
+  cachedReaddir(): PathBase[] {
+    return this.children.slice(0, this.provisional)
+  }
+
+  readdirSuccess() {
+    // succeeded, mark readdir called bit
+    this.addType(READDIR_CALLED)
+    // mark all remaining provisional children as ENOENT
+    for (let p = this.provisional; p < this.children.length; p++) {
+      this.children[p].markENOENT()
+    }
+  }
+
+  markENOENT() {
+    // mark as UNKNOWN and ENOENT
+    if (this.#type & ENOENT) return
+    this.#type = (this.#type | ENOENT) & IFMT_UNKNOWN
+    this.markChildrenENOENT()
+  }
+
+  markChildrenENOENT() {
+    // all children are provisional
+    this.provisional = 0
+
+    // all children do not exist
+    for (const p of this.children) {
+      p.markENOENT()
+    }
+  }
+
+  // save the information when we know the entry is not a dir
+  markENOTDIR() {
+    // entry is not a directory, so any children can't exist.
+    // if it's already marked ENOTDIR, bail
+    if (this.#type & ENOTDIR) return
+    let t = this.#type
+    // this could happen if we stat a dir, then delete it,
+    // then try to read it or one of its children.
+    if ((t & IFMT) === IFDIR) t &= IFMT_UNKNOWN
+    this.#type = t | ENOTDIR
+    this.markChildrenENOENT()
+  }
+
+  readdirFail(er: NodeJS.ErrnoException) {
+    if (er.code === 'ENOTDIR' || er.code === 'EPERM') {
+      this.markENOTDIR()
+    }
+    if (er.code === 'ENOENT') {
+      this.markENOENT()
+    }
+    this.provisional = 0
+  }
+
+  lstatFail(er: NodeJS.ErrnoException) {
+    if (er.code === 'ENOTDIR') {
+      const e = this.parent || this
+      e.markENOTDIR()
+    } else if (er.code === 'ENOENT') {
+      this.markENOENT()
+    }
+  }
+
+  readlinkFail(er: NodeJS.ErrnoException) {
+    let ter = this.#type
+    ter |= ENOREADLINK
+    if (er.code === 'ENOENT') ter |= ENOENT
+    if (er.code === 'EINVAL') {
+      // exists, but not a symlink, we don't know WHAT it is, so remove
+      // all IFMT bits.
+      ter &= IFMT_UNKNOWN
+    }
+    this.#type = ter
+    if (er.code === 'ENOTDIR' && this.parent) {
+      this.parent.markENOTDIR()
+    }
+  }
+
+  readdirAddChild(e: Dirent) {
+    return this.readdirMaybePromoteChild(e) || this.readdirAddNewChild(e)
+  }
+
+  // TODO: mark private once readdir factors over
+  readdirAddNewChild(e: Dirent): PathBase {
+    // alloc new entry at head, so it's never provisional
+    const { children } = this
+    const type = entToType(e)
+    const child = this.newChild(e.name, type, { parent: this })
+    children.unshift(child)
+    this.provisional++
+    return child
+  }
+
+  // TODO: mark private once readdir factors over
+  readdirMaybePromoteChild(e: Dirent): PathBase | undefined {
+    const { children, provisional } = this
+    for (let p = provisional; p < children.length; p++) {
+      const pchild = children[p]
+      const name = this.nocase ? e.name.toLowerCase() : e.name
+      if (name !== pchild.matchName) {
+        continue
+      }
+
+      return this.readdirPromoteChild(e, pchild, p)
+    }
+  }
+
+  // TODO: make private once all of readdir factors over
+  readdirPromoteChild(e: Dirent, p: PathBase, index: number): PathBase {
+    const { children, provisional } = this
+    const v = p.name
+    const type = entToType(e)
+
+    p.setType(type)
+    // case sensitivity fixing when we learn the true name.
+    if (v !== e.name) p.name = e.name
+
+    // just advance provisional index (potentially off the list),
+    // otherwise we have to splice/pop it out and re-insert at head
+    if (index !== provisional) {
+      if (index === children.length - 1) this.children.pop()
+      else this.children.splice(index, 1)
+      this.children.unshift(p)
+    }
+    this.provisional++
+    return p
+  }
+
+  async lstat(): Promise<PathBase | undefined> {
+    if ((this.#type & ENOENT) === 0) {
+      try {
+        this.setType(entToType(await lstat(this.fullpath())))
+        return this
+      } catch (er) {
+        this.lstatFail(er as NodeJS.ErrnoException)
+      }
+    }
+  }
+
+  lstatSync(): PathBase | undefined {
+    if ((this.#type & ENOENT) === 0) {
+      try {
+        this.setType(entToType(lstatSync(this.fullpath())))
+        return this
+      } catch (er) {
+        this.lstatFail(er as NodeJS.ErrnoException)
+      }
+    }
+  }
+
+  *readdirSync(): Generator<PathBase, void, void> {
+    if (this.cannotReaddir()) {
+      return
+    }
+
+    if (this.calledReaddir()) {
+      for (const e of this.cachedReaddir()) yield e
+      return
+    }
+
+    // else read the directory, fill up children
+    // de-provisionalize any provisional children.
+    const fullpath = this.fullpath()
+    let finished = false
+    try {
+      const dir = opendirSync(fullpath)
+      for (const e of syncDirIterate(dir)) {
+        const p = this.readdirAddChild(e)
+        yield p
+      }
+      finished = true
+    } catch (er) {
+      this.readdirFail(er as NodeJS.ErrnoException)
+    } finally {
+      if (finished) {
+        this.readdirSuccess()
+      } else {
+        // all refs must be considered provisional now, since it was
+        // cancelled, but didn't actually fail.
+        this.provisional = 0
+      }
+    }
+  }
+
+  async *readdir(): AsyncGenerator<PathBase, void, void> {
+    if (this.cannotReaddir()) {
+      return
+    }
+
+    if (this.calledReaddir()) {
+      for (const e of this.cachedReaddir()) {
+        yield e
+      }
+    }
+
+    // else read the directory, fill up children
+    // de-provisionalize any provisional children.
+    const fullpath = this.fullpath()
+    let finished = false
+    try {
+      // iterators are cool, and this does have the shortcoming
+      // of falling over on dirs with *massive* amounts of entries,
+      // but async iterators are just too slow by comparison.
+      const dir = await opendir(fullpath)
+      for await (const e of dir) {
+        yield this.readdirAddChild(e)
+      }
+      finished = true
+    } catch (er) {
+      this.readdirFail(er as NodeJS.ErrnoException)
+    } finally {
+      if (finished) {
+        this.readdirSuccess()
+      } else {
+        // all refs must be considered provisional, since it did not
+        // complete.  but if we haven't gotten any children, then it's
+        // still 0.
+        this.provisional = 0
+      }
+    }
   }
 }
 
@@ -443,8 +739,8 @@ abstract class PathWalkerBase {
   }
 
   abstract parseRootPath(dir: string): string
-
   abstract newRoot(): PathBase
+  abstract isAbsolute(p: string): boolean
 
   // same interface as require('path').resolve
   resolve(...paths: string[]): string {
@@ -462,8 +758,6 @@ abstract class PathWalkerBase {
     return this.cwd.resolve(r).fullpath()
   }
 
-  abstract isAbsolute(p: string): boolean
-
   // dirname/name/fullpath always within a given PW, so we know
   // that the only thing that can be parentless is the root, unless
   // something is deeply wrong.
@@ -474,210 +768,39 @@ abstract class PathWalkerBase {
     return entry.name
   }
 
-  // move to Path
-  dirname(entry: PathBase = this.cwd): string {
-    return !entry.parent
-      ? entry.name
-      : entry.parent.fullpath()
+  dirname(entry: PathBase | string = this.cwd): string {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    return (entry.parent || entry).fullpath()
   }
 
-  // move to Path
-  calledReaddir(p: PathBase): boolean {
-    return (p.getType() & READDIR_CALLED) === READDIR_CALLED
-  }
-
-  // move to Path
-  cachedReaddir(entry: PathBase, withFileTypes: false): string[]
-  cachedReaddir(entry: PathBase, withFileTypes: true): PathBase[]
-  cachedReaddir(
-    entry: PathBase,
-    withFileTypes: boolean
-  ): string[] | PathBase[]
-  cachedReaddir(
-    entry: PathBase,
-    withFileTypes: boolean
-  ): string[] | PathBase[] {
-    const { children, provisional } = entry
-    const c = children.slice(0, provisional)
-    return withFileTypes ? c : c.map(c => c.name)
-  }
-
-  // move withFileTypes impl to Path, call that and stringify if not
-  // asynchronous iterator for dir entries
-  // not a "for await" async iterator, but an async function
-  // that returns an iterable array.
   readdir(
     entry?: PathBase | string,
     options?: { withFileTypes: true }
-  ): Promise<PathBase[]>
+  ): AsyncGenerator<PathBase, void, void>
   readdir(
     entry: PathBase | string,
     options: { withFileTypes: false }
-  ): Promise<string[]>
+  ): AsyncGenerator<string, void, void>
   readdir(
     entry: PathBase | string,
     options: { withFileTypes: boolean }
-  ): Promise<string[] | PathBase[]>
-  async readdir(
+  ): AsyncGenerator<string | PathBase, void, void>
+  async *readdir(
     entry: PathBase | string = this.cwd,
     { withFileTypes = true }: { withFileTypes: boolean } = {
       withFileTypes: true,
     }
-  ): Promise<PathBase[] | string[]> {
+  ): AsyncGenerator<PathBase | string, void, void> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
     }
-    const t = entry.getType()
-    if ((t & ENOCHILD) !== 0) {
-      return []
-    }
-
-    if (this.calledReaddir(entry)) {
-      return this.cachedReaddir(entry, withFileTypes)
-    }
-
-    // else read the directory, fill up children
-    // de-provisionalize any provisional children.
-    const fullpath = entry.fullpath()
-    try {
-      // iterators are cool, and this does have the shortcoming
-      // of falling over on dirs with *massive* amounts of entries,
-      // but async iterators are just too slow by comparison.
-      for (const e of await readdir(fullpath, { withFileTypes: true })) {
-        this.readdirAddChild(entry, e)
-      }
-    } catch (er) {
-      this.readdirFail(entry, er as NodeJS.ErrnoException)
-      // all refs must be considered provisional, since it did not
-      // complete.  but if we haven't gotten any children, then it's
-      // still -1.
-      entry.provisional = entry.children.length ? 0 : -1
-      return []
-    }
-
-    this.readdirSuccess(entry)
-    return this.cachedReaddir(entry, withFileTypes)
-  }
-
-  // move to Path
-  readdirSuccess(entry: PathBase) {
-    // succeeded, mark readdir called bit
-    entry.addType(READDIR_CALLED)
-    // mark all remaining provisional children as ENOENT
-    const { children, provisional } = entry
-    for (let p = provisional; p < children.length; p++) {
-      this.markENOENT(children[p])
+    for await (const e of entry.readdirSync()) {
+      yield withFileTypes ? e : e.name
     }
   }
 
-  // move to Path
-  readdirAddChild(entry: PathBase, e: Dirent) {
-    return (
-      this.readdirMaybePromoteChild(entry, e) ||
-      this.readdirAddNewChild(entry, e)
-    )
-  }
-
-  // move to Path
-  readdirMaybePromoteChild(
-    entry: PathBase,
-    e: Dirent
-  ): PathBase | undefined {
-    const { children, provisional } = entry
-    for (let p = provisional; p < children.length; p++) {
-      const pchild = children[p]
-      const name = this.nocase ? e.name.toLowerCase() : e.name
-      if (name !== pchild.matchName) {
-        continue
-      }
-
-      return this.readdirPromoteChild(entry, e, pchild, p)
-    }
-  }
-
-  // move to Path
-  readdirPromoteChild(
-    entry: PathBase,
-    e: Dirent,
-    p: PathBase,
-    index: number
-  ): PathBase {
-    const { children, provisional } = entry
-    const v = p.name
-    const type = entToType(e)
-
-    p.setType(type)
-    // case sensitivity fixing when we learn the true name.
-    if (v !== e.name) p.name = e.name
-
-    // just advance provisional index (potentially off the list),
-    // otherwise we have to splice/pop it out and re-insert at head
-    if (index !== provisional) {
-      if (index === children.length - 1) entry.children.pop()
-      else entry.children.splice(index, 1)
-      entry.children.unshift(p)
-    }
-    entry.provisional++
-    return p
-  }
-
-  // move to Path
-  readdirAddNewChild(parent: PathBase, e: Dirent): PathBase {
-    // alloc new entry at head, so it's never provisional
-    const { children } = parent
-    const type = entToType(e)
-    const child = parent.newChild(e.name, type, { parent })
-    children.unshift(child)
-    parent.provisional++
-    return child
-  }
-
-  // move to Path
-  readdirFail(entry: PathBase, er: NodeJS.ErrnoException) {
-    if (er.code === 'ENOTDIR' || er.code === 'EPERM') {
-      this.markENOTDIR(entry)
-    }
-    if (er.code === 'ENOENT') {
-      this.markENOENT(entry)
-    }
-  }
-
-  // move to Path
-  // save the information when we know the entry is not a dir
-  markENOTDIR(entry: PathBase) {
-    // entry is not a directory, so any children can't exist.
-    // unmark IFDIR, mark ENOTDIR
-    let t = entry.getType()
-    // if it's already marked ENOTDIR, bail
-    if (t & ENOTDIR) return
-    // this could happen if we stat a dir, then delete it,
-    // then try to read it or one of its children.
-    if ((t & IFDIR) === IFDIR) t &= IFMT_UNKNOWN
-    entry.setType(t | ENOTDIR)
-    this.markChildrenENOENT(entry)
-  }
-
-  // move to Path
-  markENOENT(entry: PathBase) {
-    // mark as UNKNOWN and ENOENT
-    const t = entry.getType()
-    if (t & ENOENT) return
-    entry.setType((t | ENOENT) & IFMT_UNKNOWN)
-    this.markChildrenENOENT(entry)
-  }
-
-  // move to Path
-  markChildrenENOENT(entry: PathBase) {
-    // all children are provisional
-    entry.provisional = 0
-
-    // all children do not exist
-    for (const p of entry.children) {
-      this.markENOENT(p)
-    }
-  }
-
-  // move to Path
   /**
    * A generator that iterates over the directory entries.
    * Similar to fs.readdirSync, but:
@@ -709,166 +832,80 @@ abstract class PathWalkerBase {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
     }
-    const t = entry.getType()
-    if ((t & ENOCHILD) !== 0) {
-      return
-    }
-
-    if (this.calledReaddir(entry)) {
-      for (const e of this.cachedReaddir(entry, withFileTypes)) yield e
-      return
-    }
-
-    // else read the directory, fill up children
-    // de-provisionalize any provisional children.
-    const fullpath = entry.fullpath()
-    let finished = false
-    try {
-      const dir = opendirSync(fullpath)
-      for (const e of syncDirIterate(dir)) {
-        const p = this.readdirAddChild(entry, e)
-        yield withFileTypes ? p : p.name
-      }
-      finished = true
-    } catch (er) {
-      this.readdirFail(entry, er as NodeJS.ErrnoException)
-    } finally {
-      if (finished) {
-        this.readdirSuccess(entry)
-      } else {
-        // all refs must be considered provisional now, since it failed.
-        entry.provisional = 0
-      }
+    for (const e of entry.readdirSync()) {
+      yield withFileTypes ? e : e.name
     }
   }
 
   // take either a string or Path, move implementation details to Path
   // fills in the data we can gather, or returns undefined on error
-  async lstat(entry: PathBase = this.cwd): Promise<PathBase | undefined> {
-    const t = entry.getType()
-    if (t & ENOENT) {
-      return
+  // effectively always {withFileTypes:true}, because that's the point
+  async lstat(
+    entry: string | PathBase = this.cwd
+  ): Promise<PathBase | undefined> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
     }
-    try {
-      entry.setType(entToType(await lstat(entry.fullpath())))
-      return entry
-    } catch (er) {
-      this.lstatFail(entry, er as NodeJS.ErrnoException)
-    }
+    return entry.lstat()
   }
 
-  // take either a string or Path
-  lstatSync(entry: PathBase = this.cwd): PathBase | undefined {
-    const t = entry.getType()
-    if (t & ENOENT) {
-      return
+  lstatSync(entry: string | PathBase = this.cwd): PathBase | undefined {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
     }
-    try {
-      entry.setType(entToType(lstatSync(entry.fullpath())))
-      return entry
-    } catch (er) {
-      this.lstatFail(entry, er as NodeJS.ErrnoException)
-    }
+    return entry.lstatSync()
   }
 
-  // move to Path
-  lstatFail(entry: PathBase, er: NodeJS.ErrnoException) {
-    if (er.code === 'ENOTDIR') {
-      this.markENOTDIR(entry.parent || entry)
-    } else if (er.code === 'ENOENT') {
-      this.markENOENT(entry)
+  readlink(
+    entry: string | PathBase,
+    opt?: { withFileTypes: false }
+  ): Promise<string | undefined>
+  readlink(
+    entry: string | PathBase,
+    opt: { withFileTypes: true }
+  ): Promise<PathBase | undefined>
+  readlink(
+    entry: string | PathBase,
+    opt: { withFileTypes: boolean }
+  ): Promise<string | PathBase | undefined>
+  async readlink(
+    entry: string | PathBase,
+    { withFileTypes }: { withFileTypes: boolean } = {
+      withFileTypes: false,
     }
+  ): Promise<string | PathBase | undefined> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    const e = await entry.readlink()
+    return withFileTypes ? e : e?.fullpath()
   }
 
-  // move to Path
-  cannotReadlink(entry: PathBase): boolean {
-    if (!entry.parent) return false
-    const t = entry.getType()
-    // cases where it cannot possibly succeed
-    return (
-      !!((t & IFMT) !== UNKNOWN && !(t & IFLNK)) ||
-      !!(t & ENOREADLINK) ||
-      !!(t & ENOENT)
-    )
-  }
-
-  // take string or Path, move impl details to Path
-  // take {withFileTypes:boolean} arg, return string if false, else PathBase
-  async readlink(entry: PathBase): Promise<PathBase | undefined> {
-    const target = entry.linkTarget
-    if (target) {
-      return target
+  readlinkSync(
+    entry: string | PathBase,
+    opt?: { withFileTypes: false }
+  ): string | undefined
+  readlinkSync(
+    entry: string | PathBase,
+    opt: { withFileTypes: true }
+  ): PathBase | undefined
+  readlinkSync(
+    entry: string | PathBase,
+    opt: { withFileTypes: boolean }
+  ): string | PathBase | undefined
+  readlinkSync(
+    entry: string | PathBase,
+    { withFileTypes }: { withFileTypes: boolean } = {
+      withFileTypes: false,
     }
-    if (this.cannotReadlink(entry)) {
-      return undefined
+  ): string | PathBase | undefined {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
     }
-    const p = entry.parent
-    /* c8 ignore start */
-    // already covered by the cannotReadlink test, here for ts grumples
-    if (!p) {
-      return undefined
-    }
-    /* c8 ignore stop */
-    try {
-      const read = await readlink(entry.fullpath())
-      const linkTarget = p.resolve(read)
-      if (linkTarget) {
-        return (entry.linkTarget = linkTarget)
-      }
-    } catch (er) {
-      this.readlinkFail(entry, er as NodeJS.ErrnoException)
-      return undefined
-    }
-  }
-
-  // move to Path
-  readlinkFail(entry: PathBase, er: NodeJS.ErrnoException) {
-    let ter: number = ENOREADLINK | (er.code === 'ENOENT' ? ENOENT : 0)
-    if (er.code === 'EINVAL') {
-      // exists, but not a symlink, we don't know WHAT it is, so remove
-      // all IFMT bits.
-      ter &= IFMT_UNKNOWN
-    }
-    if (er.code === 'ENOTDIR' && entry.parent) {
-      this.markENOTDIR(entry.parent)
-    }
-    entry.addType(ter)
-  }
-
-  // take string or Path, move impl details to Path
-  // take {withFileTypes:boolean} arg, return string if false
-  readlinkSync(entry: PathBase): PathBase | undefined {
-    const target = entry.linkTarget
-    if (target) {
-      return target
-    }
-    if (this.cannotReadlink(entry)) {
-      return undefined
-    }
-    const p = entry.parent
-    /* c8 ignore start */
-    // already covered by the cannotReadlink test, here for ts grumples
-    if (!p) {
-      return undefined
-    }
-    /* c8 ignore stop */
-    try {
-      const read = readlinkSync(entry.fullpath())
-      const linkTarget = p.resolve(read)
-      if (linkTarget) {
-        return (entry.linkTarget = linkTarget)
-      }
-    } catch (er) {
-      this.readlinkFail(entry, er as NodeJS.ErrnoException)
-      return undefined
-    }
+    const e = entry.readlinkSync()
+    return withFileTypes ? e : e?.fullpath()
   }
 }
-
-// TODO: factor out all the windows specific stuff and put it into
-// PathWalkerWin32.  Then make PathWalker into abstract PathWalkerBase, and
-// export the process.platform version as PathWalker, and don't take a
-// 'platform' argument at all.
 
 // windows paths, default nocase=true
 export class PathWalkerWin32 extends PathWalkerBase {

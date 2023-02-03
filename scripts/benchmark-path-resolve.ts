@@ -1,3 +1,5 @@
+#!/usr/bin/env node --expose_gc --loader=ts-node/esm
+
 // Test performance against the built-in path.resolve()
 //
 // Since PathWalker is optimized for cases where the *same*
@@ -62,6 +64,7 @@ const run = (
   s: string,
   t?: string
 ) => {
+  gc && gc()
   const start = performance.now()
   const e = start + 1000
   let count = 0
