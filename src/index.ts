@@ -4,26 +4,26 @@
 // usability.
 //
 // so PathWalker.dirname(str) returns
-// PathWalker.cwd().resolve(dir).dirname().fullpath()
+// PathWalker.cwd().resolve(dir).parent.fullpath()
 
 import LRUCache from 'lru-cache'
 import { posix, win32 } from 'path'
 
-import { Dir, lstatSync, opendirSync, readlinkSync } from 'fs'
-import { lstat, opendir, readlink } from 'fs/promises'
+import { lstatSync, readdirSync, readlinkSync } from 'fs'
+import { lstat, readdir, readlink } from 'fs/promises'
 
 import { Dirent, Stats } from 'fs'
 
-function* syncDirIterate(dir: Dir) {
-  let e
-  try {
-    while ((e = dir.readSync())) {
-      yield e
-    }
-  } finally {
-    dir.closeSync()
-  }
-}
+// function* syncDirIterate(dir: Dir) {
+//   let e
+//   try {
+//     while ((e = dir.readSync())) {
+//       yield e
+//     }
+//   } finally {
+//     dir.closeSync()
+//   }
+// }
 
 // turn something like //?/c:/ into c:\
 const uncDriveRegexp = /^\\\\\?\\([a-z]:)\\?$/
@@ -526,14 +526,15 @@ export abstract class PathBase implements Dirent {
     }
   }
 
-  *readdirSync(): Generator<PathBase, void, void> {
+  readdirSync(): PathBase[] {
     if (this.cannotReaddir()) {
-      return
+      return []
     }
 
     if (this.calledReaddir()) {
-      for (const e of this.cachedReaddir()) yield e
-      return
+      return this.cachedReaddir()
+      // for (const e of this.cachedReaddir()) yield e
+      // return
     }
 
     // else read the directory, fill up children
@@ -541,11 +542,14 @@ export abstract class PathBase implements Dirent {
     const fullpath = this.fullpath()
     let finished = false
     try {
-      const dir = opendirSync(fullpath)
-      for (const e of syncDirIterate(dir)) {
-        const p = this.readdirAddChild(e)
-        yield p
+      for (const e of readdirSync(fullpath, { withFileTypes: true })) {
+        this.readdirAddChild(e)
       }
+      // const dir = opendirSync(fullpath)
+      // for (const e of syncDirIterate(dir)) {
+      //   const p = this.readdirAddChild(e)
+      //   yield p
+      // }
       finished = true
     } catch (er) {
       this.readdirFail(er as NodeJS.ErrnoException)
@@ -557,18 +561,17 @@ export abstract class PathBase implements Dirent {
         // cancelled, but didn't actually fail.
         this.provisional = 0
       }
+      return this.cachedReaddir()
     }
   }
 
-  async *readdir(): AsyncGenerator<PathBase, void, void> {
+  async readdir(): Promise<PathBase[]> {
     if (this.cannotReaddir()) {
-      return
+      return []
     }
 
     if (this.calledReaddir()) {
-      for (const e of this.cachedReaddir()) {
-        yield e
-      }
+      return this.cachedReaddir()
     }
 
     // else read the directory, fill up children
@@ -579,9 +582,12 @@ export abstract class PathBase implements Dirent {
       // iterators are cool, and this does have the shortcoming
       // of falling over on dirs with *massive* amounts of entries,
       // but async iterators are just too slow by comparison.
-      const dir = await opendir(fullpath)
-      for await (const e of dir) {
-        yield this.readdirAddChild(e)
+      // const dir = await opendir(fullpath)
+      // for await (const e of dir) {
+      //   yield this.readdirAddChild(e)
+      // }
+      for (const e of await readdir(fullpath, { withFileTypes: true })) {
+        this.readdirAddChild(e)
       }
       finished = true
     } catch (er) {
@@ -596,6 +602,7 @@ export abstract class PathBase implements Dirent {
         this.provisional = 0
       }
     }
+    return this.cachedReaddir()
   }
 }
 
@@ -702,6 +709,7 @@ abstract class PathWalkerBase {
   roots: { [k: string]: PathBase }
   cwd: PathBase
   cwdPath: string
+  cache: LRUCache<string, string>
   abstract nocase: boolean
   abstract sep: string | RegExp
 
@@ -716,6 +724,7 @@ abstract class PathWalkerBase {
     const cwdPath = pathImpl.resolve(cwd)
     this.cwdPath = cwdPath
     this.rootPath = this.parseRootPath(cwdPath)
+    this.cache = new LRUCache({ max: 256 })
 
     const split = cwdPath.substring(this.rootPath.length).split(sep)
     // resolve('/') leaves '', splits to [''], we don't want that.
@@ -755,7 +764,13 @@ abstract class PathWalkerBase {
         break
       }
     }
-    return this.cwd.resolve(r).fullpath()
+    const cached = this.cache.get(r)
+    if (cached !== undefined) {
+      return cached
+    }
+    const result = this.cwd.resolve(r).fullpath()
+    this.cache.set(r, result)
+    return result
   }
 
   // dirname/name/fullpath always within a given PW, so we know
@@ -778,26 +793,28 @@ abstract class PathWalkerBase {
   readdir(
     entry?: PathBase | string,
     options?: { withFileTypes: true }
-  ): AsyncGenerator<PathBase, void, void>
+  ): Promise<PathBase[]>
   readdir(
     entry: PathBase | string,
     options: { withFileTypes: false }
-  ): AsyncGenerator<string, void, void>
+  ): Promise<string[]>
   readdir(
     entry: PathBase | string,
     options: { withFileTypes: boolean }
-  ): AsyncGenerator<string | PathBase, void, void>
-  async *readdir(
+  ): Promise<string[] | PathBase[]>
+  async readdir(
     entry: PathBase | string = this.cwd,
     { withFileTypes = true }: { withFileTypes: boolean } = {
       withFileTypes: true,
     }
-  ): AsyncGenerator<PathBase | string, void, void> {
+  ): Promise<PathBase[] | string[]> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
     }
-    for await (const e of entry.readdirSync()) {
-      yield withFileTypes ? e : e.name
+    if (withFileTypes) {
+      return entry.readdir()
+    } else {
+      return (await entry.readdir()).map(e => e.name)
     }
   }
 
@@ -814,27 +831,32 @@ abstract class PathWalkerBase {
   readdirSync(
     entry?: PathBase | string,
     options?: { withFileTypes: true }
-  ): Generator<PathBase, void, void>
+  ): PathBase[]
   readdirSync(
     entry: PathBase | string,
     options: { withFileTypes: false }
-  ): Generator<string, void, void>
+  ): string[]
   readdirSync(
     entry: PathBase | string,
     options: { withFileTypes: boolean }
-  ): Generator<string | PathBase, void, void>
-  *readdirSync(
+  ): string[] | PathBase[]
+  readdirSync(
     entry: PathBase | string = this.cwd,
     { withFileTypes = true }: { withFileTypes: boolean } = {
       withFileTypes: true,
     }
-  ): Generator<PathBase | string, void, void> {
+  ): PathBase[] | string[] {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
     }
-    for (const e of entry.readdirSync()) {
-      yield withFileTypes ? e : e.name
+    if (withFileTypes) {
+      return entry.readdirSync()
+    } else {
+      return entry.readdirSync().map(e => e.name)
     }
+    //for (const e of entry.readdirSync()) {
+    //  yield withFileTypes ? e : e.name
+    //}
   }
 
   // take either a string or Path, move implementation details to Path

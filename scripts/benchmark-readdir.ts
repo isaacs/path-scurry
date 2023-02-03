@@ -135,17 +135,17 @@ const walkReusePWSyncRecurse = (done: () => any) => {
 //   done()
 // }
 
-const walkFsReaddirAsyncRecurse = (done: () => any) => {
-  const walk = async (p: string) => {
-    const entries = await readdir(dir, { withFileTypes: true })
-    const promises:Promise<void>[] = []
-    for (const entry of entries) {
-      promises.push(walk(resolve(p, entry.name)))
-    }
-    await Promise.all(promises)
-  }
-  walk(dir).then(done)
-}
+//const walkFsReaddirAsyncRecurse = (done: () => any) => {
+//  const walk = async (p: string) => {
+//    const entries = await readdir(dir, { withFileTypes: true })
+//    const promises:Promise<void>[] = []
+//    for (const entry of entries) {
+//      promises.push(walk(resolve(p, entry.name)))
+//    }
+//    await Promise.all(promises)
+//  }
+//  walk(dir).then(done)
+//}
 
 // const walkFsReaddirAsyncIterate = (done: () => any) => {
 //   const walk = async (p: string) => {
@@ -279,6 +279,7 @@ const run = async (fn: (done: () => void) => void) => {
     count += N * 111111
   }
   const elapsed = performance.now() - start
+  gc && gc()
   const score = count / elapsed
   return score
 }
