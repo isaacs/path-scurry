@@ -75,3 +75,198 @@ const pw2 = new PathWalker('/a/b/c')
 const relativeDir = pw2.cwd.resolve('../x') // pointer to entry for '/a/b/x'
 const relative2 = pw2.cwd.resolve('/a/b/d/../x') // same path, same pointer
 ```
+
+## API
+
+[Full TypeDoc API](https://isaacs.github.io/path-walker)
+
+There are platform-specific classes exported, but for the most
+part, the default `PathWalker` and `Path` exports are what you
+most likely need, unless you are testing behavior for other
+platforms.
+
+Intended public API is documented here, but the full
+documentation does include internal types, which should not be
+accessed directly.
+
+### Interface `PathWalkerOpts`
+
+The type of the `options` argument passed to the `PathWalker`
+constructor.
+
+- `nocase`: Boolean indicating that file names should be compared
+  case-insensitively. Defaults to `true` on darwin and win32
+  implementations, `false` elsewhere.
+- `childrenCacheSize`: Number of child entries to cache, in order
+  to speed up `resolve()` and `readdir()` calls. Defaults to
+  `16 * 1024` (ie, `16384`). Setting it to a higher value will
+  run the risk of JS heap allocation errors on large directory
+  trees. Setting it to `256` or smaller will significantly reduce
+  the construction time and data consumption overhead, but with
+  the downside of operations being slower on large directory
+  trees. Setting it to `0` will mean that effectively no
+  operations are cached, and this module will be roughly the same
+  speed as `fs` for file system operations, and _much_ slower
+  than `path.resolve()` for repeated path resolution.
+
+### Class `PathWalker`
+
+The main interface.  Defaults to an appropriate class based on
+the current platform.
+
+Use `PathWalkerWin32`, `PathWalkerDarwin`, or `PathWalkerPosix`
+if implementation-specific behavior is desired.
+
+#### `const pw = new PathWalker(cwd:string = process.cwd(), opts: PathWalkerOpts)`
+
+Instantiate a new PathWalker object.
+
+#### `pw.cwd`
+
+Path object representing the current working directory for the
+PathWalker.
+
+#### `pw.cwdString`
+
+String path of the fully resolved current working directory
+for the PathWalker.
+
+#### `pw.resolve(...paths: string[])`
+
+Caching `path.resolve()`.
+
+Significantly faster than `path.resolve()` if called repeatedly
+with the same paths.  Significantly slower otherwise, as it
+builds out the cached Path entries.
+
+To get a `Path` object resolved from the `PathWalker`, use
+`pw.cwd.resolve(path)`.  Note that `Path.resolve` only takes a
+single string argument, not multiple.
+
+#### `pw.basename(path: string | Path): string`
+
+Return the basename of the provided string or Path.
+
+#### `pw.dirname(path: string | Path): string`
+
+Return the parent directory of the supplied string or Path.
+
+#### `async pw.readdir(dir = pw.cwd, opts?: { withFileTypes: boolean })`
+
+Read the directory and resolve to an array of strings if
+`withFileTypes` is explicitly set to `false` or Path objects
+otherwise.
+
+Returns `[]` if no entries are found, or if any error occurs.
+
+#### `pw.readdirSync(dir = pw.cwd, opts?: { withFileTypes: boolean })`
+
+Synchronous `pw.readdir()`
+
+#### `async pw.readlink(link = pw.cwd, opts?: { withFileTypes: boolean })`
+
+Call `fs.readlink` on the supplied string or Path object, and
+return the result.
+
+Returns `undefined` if any error occurs (for example, if the
+argument is not a symbolic link), or a `Path` object if
+`withFileTypes` is explicitly set to `true`, or a string
+otherwise.
+
+#### `pw.readlinkSync(link = pw.cwd, opts?: { withFileTypes: boolean })`
+
+Synchronous `pw.readlink()`
+
+#### `async pw.lstat(entry = pw.cwd)`
+
+Call `fs.lstat` on the supplied string or Path object, and fill
+in as much information as possible, returning the updated `Path`
+object.
+
+Returns `undefined` if the entry does not exist, or if any error
+is encountered.
+
+Note that some `Stats` data (such as `ino`, `dev`, and `mode`) will
+not be supplied.  For those things, you'll need to call
+`fs.lstat` yourself.
+
+#### `pw.lstatSync(entry = pw.cwd)`
+
+Synchronous `pw.lstat()`
+
+### Class `Path` implements [fs.Dirent](https://nodejs.org/docs/latest/api/fs.html#class-fsdirent)
+
+Object representing a given path on the filesystem, which may or
+may not exist.
+
+Note that the actual class in use will be either `PathWin32` or
+`PathPosix`, depending on the implementation of `PathWalker` in
+use.  They differ in the separators used to split and join path
+strings, and the handling of root paths.
+
+In `PathPosix` implementations, paths are split and joined using
+the `'/'` character, and `'/'` is the only root path ever in use.
+
+In `PathWin32` implementations, paths are split using either
+`'/'` or `'\\'` and joined using `'\\'`, and multiple roots may
+be in use based on the drives and UNC paths encountered.  UNC
+paths such as `//?/C:/` that identify a drive letter, will be
+treated as an alias for the same root entry as their associated
+drive letter (in this case `'C:\\'`).
+
+#### `path.name`
+
+Name of this file system entry.
+
+#### `path.fullpath()`
+
+The fully resolved path to the entry.
+
+#### `path.isFile()`, `path.isDirectory()`, etc.
+
+Same as the identical `fs.Dirent.isX()` methods.
+
+#### `path.isUnknown()`
+
+Returns true if the path's type is unknown.  Always returns true
+when the path is known to not exist.
+
+#### `path.resolve(p: string)`
+
+Return a `Path` object associated with the provided path string
+as resolved from the current Path object.
+
+#### `async path.readdir()`
+
+Return an array of `Path` objects found by reading the associated
+path entry.
+
+If path is not a directory, or if any error occurs, returns `[]`
+
+#### `path.readdirSync()`
+
+Synchronous `path.readdir()`
+
+#### `async path.readlink()`
+
+Return the `Path` object referenced by the `path` as a symbolic
+link.
+
+If the `path` is not a symbolic link, or any error occurs,
+returns `undefined`.
+
+#### `path.readlinkSync()`
+
+Synchronous `path.readlink()`
+
+#### `async path.lstat()`
+
+Call `lstat` on the path object, and fill it in with details
+determined.
+
+If path does not exist, or any other error occurs, returns
+`undefined`, and marks the path as "unknown" type.
+
+#### `path.lstatSync()`
+
+Synchronous `path.lstat()`
