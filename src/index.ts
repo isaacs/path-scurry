@@ -750,7 +750,7 @@ abstract class PathWalkerBase {
     for (let i = paths.length - 1; i >= 0; i--) {
       const p = paths[i]
       if (!p || p === '.') continue
-      r = `${r}/${p}`
+      r = r ? `${p}/${r}` : p
       if (this.isAbsolute(p)) {
         break
       }
