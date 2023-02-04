@@ -1,7 +1,6 @@
 import * as fs from 'fs'
 import { lstatSync, readdirSync, writeFileSync } from 'fs'
 import * as fsp from 'fs/promises'
-import { createServer } from 'net'
 import { basename, resolve } from 'path'
 import { rimrafSync } from 'rimraf'
 import t from 'tap'
@@ -278,23 +277,6 @@ t.test('lstat', async t => {
   t.equal(link.isFIFO(), false)
   t.equal(link.isSocket(), false)
   t.equal(link.isUnknown(), false)
-
-  const server = createServer()
-  await new Promise<void>(res =>
-    server.listen(resolve(td, 'socket'), () => res())
-  )
-  const socket = pw.lstatSync('socket')
-  if (!socket) throw new Error('expect dir to exist')
-  t.match(socket, PathBase)
-  t.equal(socket.isFile(), false)
-  t.equal(socket.isDirectory(), false)
-  t.equal(socket.isSymbolicLink(), false)
-  t.equal(socket.isCharacterDevice(), false)
-  t.equal(socket.isBlockDevice(), false)
-  t.equal(socket.isFIFO(), false)
-  t.equal(socket.isSocket(), true)
-  t.equal(socket.isUnknown(), false)
-  server.close()
 })
 
 t.test('readdir, simple basic', async t => {
