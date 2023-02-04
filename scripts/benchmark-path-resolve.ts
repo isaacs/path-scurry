@@ -1,5 +1,7 @@
 #!/usr/bin/env node --expose_gc --loader=ts-node/esm
 
+console.log('Testing performance compared with path.resolve()')
+
 // Test performance against the built-in path.resolve()
 //
 // Since PathWalker is optimized for cases where the *same*

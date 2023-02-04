@@ -1,7 +1,12 @@
 import LRUCache from 'lru-cache'
 import { posix, win32 } from 'path'
 
-import { lstatSync, readdirSync, readlinkSync } from 'fs'
+import {
+  lstatSync,
+  readdir as readdirCB,
+  readdirSync,
+  readlinkSync,
+} from 'fs'
 import { lstat, readdir, readlink } from 'fs/promises'
 
 import { Dirent, Stats } from 'fs'
@@ -39,6 +44,13 @@ const ENOCHILD = ENOTDIR | ENOENT
 const ENOREADLINK = 0b1000_0000
 const TYPEMASK = 0b1111_1111
 
+const canReaddir = (flags: number) => {
+  if (flags & ENOCHILD) return false
+  const ifmt = IFMT & flags
+  if (ifmt === UNKNOWN || ifmt === IFDIR || ifmt === IFLNK) return true
+  return false
+}
+
 const entToType = (s: Dirent | Stats) =>
   s.isFile()
     ? IFREG
@@ -68,7 +80,7 @@ export interface PathOpts {
  * An LRUCache for storing resolved path strings or Path objects.
  * @internal
  */
-export class ResolveCache<T> extends LRUCache<string, T> {
+export class ResolveCache extends LRUCache<string, string> {
   constructor() {
     super({ max: 256 })
   }
@@ -162,7 +174,6 @@ export abstract class PathBase implements Dirent {
   #matchName: string
   #fullpath?: string
   #type: number
-  #resolveCache: ResolveCache<PathBase>
   #children: ChildrenCache
   #linkTarget?: PathBase
 
@@ -188,7 +199,6 @@ export abstract class PathBase implements Dirent {
     this.nocase = nocase
     this.roots = roots
     this.root = root || this
-    this.#resolveCache = new ResolveCache()
     this.#children = children
     Object.assign(this, opts)
   }
@@ -220,17 +230,12 @@ export abstract class PathBase implements Dirent {
     if (!path) {
       return this
     }
-    const cached = this.#resolveCache.get(path)
-    if (cached) {
-      return cached
-    }
     const rootPath = this.getRootString(path)
     const dir = path.substring(rootPath.length)
     const dirParts = dir.split(this.splitSep)
     const result: PathBase = rootPath
       ? this.getRoot(rootPath).#resolveParts(dirParts)
       : this.#resolveParts(dirParts)
-    this.#resolveCache.set(path, result)
     return result
   }
 
@@ -302,7 +307,7 @@ export abstract class PathBase implements Dirent {
     pchild.parent = this
     pchild.#fullpath = fullpath
 
-    if (this.#cannotReaddir()) {
+    if (!canReaddir(this.#type)) {
       pchild.#type |= ENOENT
     }
 
@@ -327,6 +332,13 @@ export abstract class PathBase implements Dirent {
     const pv = p.fullpath()
     const fp = pv + (!p.parent ? '' : this.sep) + name
     return (this.#fullpath = fp)
+  }
+
+  /**
+   * get the flags number
+   */
+  getFlags(): number {
+    return this.#type
   }
 
   /**
@@ -387,13 +399,6 @@ export abstract class PathBase implements Dirent {
    */
   isSymbolicLink(): boolean {
     return (this.#type & IFLNK) === IFLNK
-  }
-
-  #cannotReaddir() {
-    if (this.#type & ENOCHILD) return true
-    const ifmt = this.#type & IFMT
-    // if we know it's not a dir or link, don't even try
-    return !(ifmt === UNKNOWN || ifmt === IFDIR || ifmt === IFLNK)
   }
 
   /**
@@ -471,7 +476,7 @@ export abstract class PathBase implements Dirent {
   }
 
   #calledReaddir(): boolean {
-    return (this.#type & READDIR_CALLED) === READDIR_CALLED
+    return !!(this.#type & READDIR_CALLED)
   }
 
   #readdirSuccess(children: Children) {
@@ -516,11 +521,11 @@ export abstract class PathBase implements Dirent {
     this.#markChildrenENOENT()
   }
 
-  #readdirFail(er: NodeJS.ErrnoException) {
-    if (er.code === 'ENOTDIR' || er.code === 'EPERM') {
+  #readdirFail(code: string = '') {
+    // markENOTDIR and markENOENT also set provisional=0
+    if (code === 'ENOTDIR' || code === 'EPERM') {
       this.#markENOTDIR()
-    }
-    if (er.code === 'ENOENT') {
+    } else if (code === 'ENOENT') {
       this.#markENOENT()
     } else {
       this.children().provisional = 0
@@ -571,6 +576,10 @@ export abstract class PathBase implements Dirent {
     // alloc new entry at head, so it's never provisional
     const type = entToType(e)
     const child = this.newChild(e.name, type, { parent: this })
+    const ifmt = child.#type & IFMT
+    if (ifmt !== IFDIR && ifmt !== IFLNK) {
+      child.#type |= ENOTDIR
+    }
     c.unshift(child)
     c.provisional++
     return child
@@ -657,6 +666,49 @@ export abstract class PathBase implements Dirent {
   }
 
   /**
+   * Standard node-style callback interface to get list of directory entries.
+   *
+   * If the Path cannot or does not contain any children, then an empty array
+   * is returned.
+   *
+   * Results are cached, and thus may be out of date if the filesystem is
+   * mutated.
+   */
+  readdirCB(
+    cb: (er: NodeJS.ErrnoException | null, entries: PathBase[]) => any
+  ): void {
+    if (!canReaddir(this.#type)) {
+      queueMicrotask(() => cb(null, []))
+      return
+    }
+
+    const children = this.children()
+    if (this.#calledReaddir()) {
+      queueMicrotask(() =>
+        cb(null, children.slice(0, children.provisional))
+      )
+      return
+    }
+
+    // else read the directory, fill up children
+    // de-provisionalize any provisional children.
+    const fullpath = this.fullpath()
+    readdirCB(fullpath, { withFileTypes: true }, (er, entries) => {
+      if (er) {
+        this.#readdirFail((er as NodeJS.ErrnoException).code)
+        children.provisional = 0
+      } else {
+        for (const e of entries) {
+          this.#readdirAddChild(e, children)
+        }
+        this.#readdirSuccess(children)
+      }
+      cb(null, children.slice(0, children.provisional))
+      return
+    })
+  }
+
+  /**
    * Return an array of known child entries.
    *
    * If the Path cannot or does not contain any children, then an empty array
@@ -666,7 +718,7 @@ export abstract class PathBase implements Dirent {
    * mutated.
    */
   async readdir(): Promise<PathBase[]> {
-    if (this.#cannotReaddir()) {
+    if (!canReaddir(this.#type)) {
       return []
     }
 
@@ -684,7 +736,7 @@ export abstract class PathBase implements Dirent {
       }
       this.#readdirSuccess(children)
     } catch (er) {
-      this.#readdirFail(er as NodeJS.ErrnoException)
+      this.#readdirFail((er as NodeJS.ErrnoException).code)
       children.provisional = 0
     }
     return children.slice(0, children.provisional)
@@ -694,7 +746,7 @@ export abstract class PathBase implements Dirent {
    * synchronous {@link PathBase.readdir}
    */
   readdirSync(): PathBase[] {
-    if (this.#cannotReaddir()) {
+    if (!canReaddir(this.#type)) {
       return []
     }
 
@@ -712,7 +764,7 @@ export abstract class PathBase implements Dirent {
       }
       this.#readdirSuccess(children)
     } catch (er) {
-      this.#readdirFail(er as NodeJS.ErrnoException)
+      this.#readdirFail((er as NodeJS.ErrnoException).code)
       children.provisional = 0
     }
     return children.slice(0, children.provisional)
@@ -923,7 +975,7 @@ export abstract class PathWalkerBase {
    * The Path entry corresponding to this PathWalker's current working directory.
    */
   cwd: PathBase
-  #resolveCache: ResolveCache<string>
+  #resolveCache: ResolveCache
   #children: ChildrenCache
   /**
    * Perform path comparisons case-insensitively.
@@ -1086,10 +1138,12 @@ export abstract class PathWalkerBase {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
     }
-    if (withFileTypes) {
-      return entry.readdir()
+    const flags = entry.getFlags()
+    if (!canReaddir(flags)) {
+      return []
     } else {
-      return (await entry.readdir()).map(e => e.name)
+      const p = await entry.readdir()
+      return withFileTypes ? p : p.map(e => e.name)
     }
   }
 
@@ -1117,7 +1171,10 @@ export abstract class PathWalkerBase {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
     }
-    if (withFileTypes) {
+    const flags = entry.getFlags()
+    if (!canReaddir(flags)) {
+      return []
+    } else if (withFileTypes) {
       return entry.readdirSync()
     } else {
       return entry.readdirSync().map(e => e.name)

@@ -1,3 +1,4 @@
+#!/usr/bin/env node --expose_gc --loader=ts-node/esm --no-warnings
 // Say that we have K items in a tree, each of which has W subtree links.
 //
 // Is it better for each item to store an array of child item references, or to
