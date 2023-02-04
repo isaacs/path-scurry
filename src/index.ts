@@ -7,14 +7,11 @@ import { lstat, readdir, readlink } from 'fs/promises'
 import { Dirent, Stats } from 'fs'
 
 // turn something like //?/c:/ into c:\
-const uncDriveRegexp = /^\\\\\?\\([a-z]:)\\?$/
+const uncDriveRegexp = /^\\\\\?\\([a-z]:)\\?$/i
 const uncToDrive = (rootPath: string): string =>
-  rootPath.replace(/\//g, '\\').replace(uncDriveRegexp, '$1:\\')
+  rootPath.replace(/\//g, '\\').replace(uncDriveRegexp, '$1\\')
 
-// if it's a drive letter path, return the drive letter plus \
-// otherwise, return \
-const driveCwd = (c: string): string =>
-  (c.match(/^([a-z]):(?:\\|\/|$)/)?.[1] || '') + '\\'
+// windows paths are separated by either / or \
 const eitherSep = /[\\\/]/
 
 const UNKNOWN = 0 // may not even exist, for all we know
@@ -463,7 +460,7 @@ export abstract class PathBase implements Dirent {
   }
 
   #cannotReadlink(): boolean {
-    if (!this.parent) return false
+    if (!this.parent) return true
     // cases where it cannot possibly succeed
     const ifmt = this.#type & IFMT
     return (
@@ -505,8 +502,12 @@ export abstract class PathBase implements Dirent {
   // save the information when we know the entry is not a dir
   #markENOTDIR() {
     // entry is not a directory, so any children can't exist.
-    // if it's already marked ENOTDIR, bail
+    // this *should* be impossible, since any children created
+    // after it's been marked ENOTDIR should be marked ENOENT,
+    // so it won't even get to this point.
+    /* c8 ignore start */
     if (this.#type & ENOTDIR) return
+    /* c8 ignore stop */
     let t = this.#type
     // this could happen if we stat a dir, then delete it,
     // then try to read it or one of its children.
@@ -528,8 +529,9 @@ export abstract class PathBase implements Dirent {
 
   #lstatFail(er: NodeJS.ErrnoException) {
     if (er.code === 'ENOTDIR') {
-      const e = this.parent || this
-      e.#markENOTDIR()
+      // already know it has a parent by this point
+      const p = this.parent as PathBase
+      p.#markENOTDIR()
     } else if (er.code === 'ENOENT') {
       this.#markENOENT()
     }
@@ -769,12 +771,17 @@ export class PathWin32 extends PathBase {
    * @internal
    */
   getRoot(rootPath: string): PathBase {
+    rootPath = uncToDrive(rootPath.toUpperCase())
     if (rootPath === this.root.name) {
       return this.root
     }
-    if (this.sameRoot(rootPath)) {
-      return (this.roots[rootPath] = this.root)
+    // ok, not that one, check if it matches another we know about
+    for (const [compare, root] of Object.entries(this.roots)) {
+      if (this.sameRoot(rootPath, compare)) {
+        return (this.roots[rootPath] = root)
+      }
     }
+    // otherwise, have to create a new one.
     return (this.roots[rootPath] = new PathWalkerWin32(
       rootPath,
       this
@@ -784,16 +791,15 @@ export class PathWin32 extends PathBase {
   /**
    * @internal
    */
-  sameRoot(rootPath: string): boolean {
-    rootPath = rootPath
-      .replace(/\\/g, '\\')
-      .replace(/\\\\\?\\([a-z]:)\\?$/, '$1:\\')
+  sameRoot(rootPath: string, compare: string = this.root.name): boolean {
     // windows can (rarely) have case-sensitive filesystem, but
-    // UNC and drive letters are always case-insensitive
-    if (rootPath.toUpperCase() === this.root.name.toUpperCase()) {
-      return true
-    }
-    return false
+    // UNC and drive letters are always case-insensitive, and canonically
+    // represented uppercase.
+    rootPath = rootPath
+      .toUpperCase()
+      .replace(/\//g, '\\')
+      .replace(uncDriveRegexp, '$1\\')
+    return rootPath === compare
   }
 }
 
@@ -909,10 +915,6 @@ export abstract class PathWalkerBase {
    * The Path entry corresponding to this PathWalker's current working directory.
    */
   cwd: PathBase
-  /**
-   * The string path of this PathWalker's current working directory
-   */
-  cwdPath: string
   #resolveCache: ResolveCache<string>
   #children: ChildrenCache
   /**
@@ -945,7 +947,6 @@ export abstract class PathWalkerBase {
     // this is the only time we call path.resolve()
     const cwdPath = pathImpl.resolve(cwd)
     this.roots = Object.create(null)
-    this.cwdPath = cwdPath
     this.rootPath = this.parseRootPath(cwdPath)
     this.#resolveCache = new ResolveCache()
     this.#children = new ChildrenCache(childrenCacheSize)
@@ -955,14 +956,9 @@ export abstract class PathWalkerBase {
     if (split.length === 1 && !split[0]) {
       split.pop()
     }
-    // we can safely assume the root is a directory.
-    const existing = this.roots[this.rootPath]
-    if (existing) {
-      this.root = existing
-    } else {
-      this.root = this.newRoot()
-      this.roots[this.rootPath] = this.root
-    }
+    // we can safely assume the root is a directory
+    this.root = this.newRoot()
+    this.roots[this.rootPath] = this.root
     let prev: PathBase = this.root
     for (const part of split) {
       prev = prev.child(part)
@@ -1242,6 +1238,9 @@ export class PathWalkerWin32 extends PathWalkerBase {
     super(cwd, win32, '\\', opts)
     const { nocase = this.nocase } = opts
     this.nocase = nocase
+    for (let p: PathBase | undefined = this.cwd; p; p = p.parent) {
+      p.nocase = this.nocase
+    }
   }
 
   /**
@@ -1251,15 +1250,8 @@ export class PathWalkerWin32 extends PathWalkerBase {
     // if the path starts with a single separator, it's not a UNC, and we'll
     // just get separator as the root, and driveFromUNC will return \
     // In that case, mount \ on the root from the cwd.
-    const rootPath = win32.parse(dir).root
-    const driveFromUNC = uncToDrive(rootPath)
-    if (driveFromUNC === this.sep) {
-      return driveCwd(win32.resolve(driveFromUNC)) + this.sep
-    } else {
-      return driveFromUNC
-    }
+    return win32.parse(dir).root.toUpperCase()
   }
-
 
   /**
    * @internal
@@ -1297,15 +1289,18 @@ export class PathWalkerPosix extends PathWalkerBase {
   /**
    * Default case sensitive
    */
-  nocase: boolean = false
+  nocase: boolean
   /**
    * separator for generating path strings
    */
   sep: '/' = '/'
   constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
     super(cwd, posix, '/', opts)
-    const { nocase = this.nocase } = opts
+    const { nocase = false } = opts
     this.nocase = nocase
+    for (let p: PathBase | undefined = this.cwd; p; p = p.parent) {
+      p.nocase = this.nocase
+    }
   }
 
   /**
@@ -1347,10 +1342,10 @@ export class PathWalkerPosix extends PathWalkerBase {
  * Uses {@link PathPosix} for Path objects.
  */
 export class PathWalkerDarwin extends PathWalkerPosix {
-  /**
-   * default case-insensitive
-   */
-  nocase: boolean = true
+  constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
+    const { nocase = true } = opts
+    super(cwd, { ...opts, nocase })
+  }
 }
 
 /**

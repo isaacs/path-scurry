@@ -111,7 +111,7 @@ constructor.
 
 ### Class `PathWalker`
 
-The main interface.  Defaults to an appropriate class based on
+The main interface. Defaults to an appropriate class based on
 the current platform.
 
 Use `PathWalkerWin32`, `PathWalkerDarwin`, or `PathWalkerPosix`
@@ -126,21 +126,16 @@ Instantiate a new PathWalker object.
 Path object representing the current working directory for the
 PathWalker.
 
-#### `pw.cwdString`
-
-String path of the fully resolved current working directory
-for the PathWalker.
-
 #### `pw.resolve(...paths: string[])`
 
 Caching `path.resolve()`.
 
 Significantly faster than `path.resolve()` if called repeatedly
-with the same paths.  Significantly slower otherwise, as it
+with the same paths. Significantly slower otherwise, as it
 builds out the cached Path entries.
 
 To get a `Path` object resolved from the `PathWalker`, use
-`pw.cwd.resolve(path)`.  Note that `Path.resolve` only takes a
+`pw.cwd.resolve(path)`. Note that `Path.resolve` only takes a
 single string argument, not multiple.
 
 #### `pw.basename(path: string | Path): string`
@@ -187,7 +182,7 @@ Returns `undefined` if the entry does not exist, or if any error
 is encountered.
 
 Note that some `Stats` data (such as `ino`, `dev`, and `mode`) will
-not be supplied.  For those things, you'll need to call
+not be supplied. For those things, you'll need to call
 `fs.lstat` yourself.
 
 #### `pw.lstatSync(entry = pw.cwd)`
@@ -201,7 +196,7 @@ may not exist.
 
 Note that the actual class in use will be either `PathWin32` or
 `PathPosix`, depending on the implementation of `PathWalker` in
-use.  They differ in the separators used to split and join path
+use. They differ in the separators used to split and join path
 strings, and the handling of root paths.
 
 In `PathPosix` implementations, paths are split and joined using
@@ -209,7 +204,7 @@ the `'/'` character, and `'/'` is the only root path ever in use.
 
 In `PathWin32` implementations, paths are split using either
 `'/'` or `'\\'` and joined using `'\\'`, and multiple roots may
-be in use based on the drives and UNC paths encountered.  UNC
+be in use based on the drives and UNC paths encountered. UNC
 paths such as `//?/C:/` that identify a drive letter, will be
 treated as an alias for the same root entry as their associated
 drive letter (in this case `'C:\\'`).
@@ -228,7 +223,7 @@ Same as the identical `fs.Dirent.isX()` methods.
 
 #### `path.isUnknown()`
 
-Returns true if the path's type is unknown.  Always returns true
+Returns true if the path's type is unknown. Always returns true
 when the path is known to not exist.
 
 #### `path.resolve(p: string)`
