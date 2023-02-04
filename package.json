@@ -79,7 +79,6 @@
     "url": "git+https://github.com/isaacs/path-walker"
   },
   "dependencies": {
-    "lru-cache": "^7.14.1",
-    "promise-call-limit": "^1.0.1"
+    "lru-cache": "^7.14.1"
   }
 }
