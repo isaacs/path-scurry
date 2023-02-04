@@ -528,11 +528,14 @@ export abstract class PathBase implements Dirent {
   }
 
   #lstatFail(er: NodeJS.ErrnoException) {
+    // Windows just raises ENOENT in this case, disable for win CI
+    /* c8 ignore start */
     if (er.code === 'ENOTDIR') {
       // already know it has a parent by this point
       const p = this.parent as PathBase
       p.#markENOTDIR()
     } else if (er.code === 'ENOENT') {
+      /* c8 ignore stop */
       this.#markENOENT()
     }
   }
@@ -541,15 +544,20 @@ export abstract class PathBase implements Dirent {
     let ter = this.#type
     ter |= ENOREADLINK
     if (er.code === 'ENOENT') ter |= ENOENT
-    if (er.code === 'EINVAL') {
+    // windows gets a weird error when you try to readlink a file
+    if (er.code === 'EINVAL' || er.code === 'UNKNOWN') {
       // exists, but not a symlink, we don't know WHAT it is, so remove
       // all IFMT bits.
       ter &= IFMT_UNKNOWN
     }
     this.#type = ter
+    // windows just gets ENOENT in this case.  We do cover the case,
+    // just disabled because it's impossible on Windows CI
+    /* c8 ignore start */
     if (er.code === 'ENOTDIR' && this.parent) {
       this.parent.#markENOTDIR()
     }
+    /* c8 ignore stop */
   }
 
   #readdirAddChild(e: Dirent, c: Children) {
