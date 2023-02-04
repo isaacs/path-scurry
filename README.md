@@ -99,15 +99,17 @@ constructor.
   implementations, `false` elsewhere.
 - `childrenCacheSize`: Number of child entries to cache, in order
   to speed up `resolve()` and `readdir()` calls. Defaults to
-  `16 * 1024` (ie, `16384`). Setting it to a higher value will
-  run the risk of JS heap allocation errors on large directory
-  trees. Setting it to `256` or smaller will significantly reduce
-  the construction time and data consumption overhead, but with
-  the downside of operations being slower on large directory
-  trees. Setting it to `0` will mean that effectively no
-  operations are cached, and this module will be roughly the same
-  speed as `fs` for file system operations, and _much_ slower
-  than `path.resolve()` for repeated path resolution.
+  `16 * 1024` (ie, `16384`).
+
+    Setting it to a higher value will run the risk of JS heap
+    allocation errors on large directory trees. Setting it to `256`
+    or smaller will significantly reduce the construction time and
+    data consumption overhead, but with the downside of operations
+    being slower on large directory trees. Setting it to `0` will
+    mean that effectively no operations are cached, and this module
+    will be roughly the same speed as `fs` for file system
+    operations, and _much_ slower than `path.resolve()` for
+    repeated path resolution.
 
 ### Class `PathWalker`
 
