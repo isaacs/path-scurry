@@ -10,6 +10,7 @@ import {
 import { lstat, readdir, readlink } from 'fs/promises'
 
 import { Dirent, Stats } from 'fs'
+import Minipass from 'minipass'
 
 // turn something like //?/c:/ into c:\
 const uncDriveRegexp = /^\\\\\?\\([a-z]:)\\?$/i
@@ -673,20 +674,29 @@ export abstract class PathBase implements Dirent {
    *
    * Results are cached, and thus may be out of date if the filesystem is
    * mutated.
+   *
+   * @param cb The callback called with (er, entries).  Note that the `er`
+   * param is somewhat extraneous, as all readdir() errors are handled and
+   * simply result in an empty set of entries being returned.
+   * @param allowZalgo Boolean indicating that immediately known results should
+   * *not* be deferred with `queueMicrotask`. Defaults to `false`. Release
+   * zalgo at your peril, the dark pony lord is devious and unforgiving.
    */
   readdirCB(
-    cb: (er: NodeJS.ErrnoException | null, entries: PathBase[]) => any
+    cb: (er: NodeJS.ErrnoException | null, entries: PathBase[]) => any,
+    allowZalgo: boolean = false
   ): void {
     if (!canReaddir(this.#type)) {
-      queueMicrotask(() => cb(null, []))
+      if (allowZalgo) cb(null, [])
+      else queueMicrotask(() => cb(null, []))
       return
     }
 
     const children = this.children()
     if (this.#calledReaddir()) {
-      queueMicrotask(() =>
-        cb(null, children.slice(0, children.provisional))
-      )
+      const c = children.slice(0, children.provisional)
+      if (allowZalgo) cb(null, c)
+      else queueMicrotask(() => cb(null, c))
       return
     }
 
@@ -1281,6 +1291,470 @@ export abstract class PathWalkerBase {
     const e = entry.readlinkSync()
     return withFileTypes ? e : e?.fullpath()
   }
+
+  /**
+   * Asynchronously walk the directory tree, returning an array of
+   * all path strings or Path objects found.
+   *
+   * Note that this will be extremely memory-hungry on large filesystems.
+   * In such cases, it may be better to use the stream or async iterator
+   * walk implementation.
+   */
+  walk(entry?: string | PathBase): Promise<PathBase[]>
+  walk(
+    entry: string | PathBase,
+    opts: WalkOptions & { withFileTypes: true }
+  ): Promise<PathBase[]>
+  walk(
+    entry: string | PathBase,
+    opts: WalkOptions & { withFileTypes: false }
+  ): Promise<string[]>
+  walk(
+    entry: string | PathBase,
+    opts: WalkOptions
+  ): Promise<PathBase[] | string[]>
+  async walk(
+    entry: string | PathBase = this.cwd,
+    {
+      withFileTypes = true,
+      follow = false,
+      filter,
+      walkFilter,
+    }: WalkOptions = { withFileTypes: true }
+  ): Promise<PathBase[] | string[]> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    const results: (string | PathBase)[] = []
+    if (!filter || filter(entry)) {
+      results.push(withFileTypes ? entry : entry.fullpath())
+    }
+    const dirs = new Set<PathBase>()
+    const walk = (
+      dir: PathBase,
+      cb: (er?: NodeJS.ErrnoException) => void
+    ) => {
+      dirs.add(dir)
+      dir.readdirCB((er, entries) => {
+        /* c8 ignore start */
+        if (er) {
+          return cb(er)
+        }
+        /* c8 ignore stop */
+        let len = entries.length
+        if (!len) return cb()
+        const next = () => {
+          if (--len === 0) {
+            cb()
+          }
+        }
+        for (const e of entries) {
+          if (!filter || filter(e)) {
+            results.push(withFileTypes ? e : e.fullpath())
+          }
+          if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
+            walk(e, next)
+          } else {
+            next()
+          }
+        }
+      }, true) // zalgooooooo
+    }
+
+    const start = entry
+    return new Promise<PathBase[] | string[]>((res, rej) => {
+      walk(start, er => {
+        /* c8 ignore start */
+        if (er) return rej(er)
+        /* c8 ignore stop */
+        res(results as PathBase[] | string[])
+      })
+    })
+  }
+
+  /**
+   * Synchronously walk the directory tree, returning an array of
+   * all path strings or Path objects found.
+   *
+   * Note that this will be extremely memory-hungry on large filesystems.
+   * In such cases, it may be better to use the stream or async iterator
+   * walk implementation.
+   */
+  walkSync(entry?: string | PathBase): PathBase[]
+  walkSync(
+    entry: string | PathBase,
+    opts: WalkOptions & { withFileTypes: true }
+  ): PathBase[]
+  walkSync(
+    entry: string | PathBase,
+    opts: WalkOptions & { withFileTypes: false }
+  ): string[]
+  walkSync(
+    entry: string | PathBase,
+    opts: WalkOptions
+  ): PathBase[] | string[]
+  walkSync(
+    entry: string | PathBase = this.cwd,
+    {
+      withFileTypes = true,
+      follow = false,
+      filter,
+      walkFilter,
+    }: WalkOptions = { withFileTypes: true }
+  ): PathBase[] | string[] {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    const results: (string | PathBase)[] = []
+    if (!filter || filter(entry)) {
+      results.push(withFileTypes ? entry : entry.fullpath())
+    }
+    const dirs = new Set<PathBase>([entry])
+    for (const dir of dirs) {
+      const entries = dir.readdirSync()
+      for (const e of entries) {
+        if (!filter || filter(e)) {
+          results.push(withFileTypes ? e : e.fullpath())
+        }
+        if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
+          dirs.add(e)
+        }
+      }
+    }
+    return results as string[] | PathBase[]
+  }
+
+  /**
+   * Support for `for await`
+   *
+   * Alias for {@link PathWalkerBase.iterate}
+   *
+   * Note: As of Node 19, this is very slow, compared to other methods of
+   * walking.  Consider using {@link PathWalkerBase.stream} if memory overhead
+   * and backpressure are concerns, or {@link PathWalkerBase.walk} if not.
+   */
+  [Symbol.asyncIterator]() {
+    return this.iterate()
+  }
+
+  /**
+   * Async generator form of {@link PathWalkerBase.walk}
+   *
+   * Note: As of Node 19, this is very slow, compared to other methods of
+   * walking.  Consider using {@link PathWalkerBase.stream} if memory overhead
+   * and backpressure are concerns, or {@link PathWalkerBase.walk} if not.
+   */
+  iterate(entry?: string | PathBase): AsyncGenerator<PathBase, void, void>
+  iterate(
+    entry: string | PathBase,
+    opts: WalkOptions & { withFileTypes: true }
+  ): AsyncGenerator<PathBase, void, void>
+  iterate(
+    entry: string | PathBase,
+    opts: WalkOptions & { withFileTypes: false }
+  ): AsyncGenerator<string, void, void>
+  iterate(
+    entry: string | PathBase,
+    opts: WalkOptions
+  ): AsyncGenerator<PathBase | string, void, void>
+  async *iterate(
+    entry: string | PathBase = this.cwd,
+    {
+      withFileTypes = true,
+      follow = false,
+      filter,
+      walkFilter,
+    }: WalkOptions = { withFileTypes: true }
+  ): AsyncGenerator<PathBase | string, void, void> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    if (!filter || filter(entry)) {
+      yield withFileTypes ? entry : entry.fullpath()
+    }
+    const dirs = new Set<PathBase>([entry])
+    for (const dir of dirs) {
+      for (const e of await dir.readdir()) {
+        if (!filter || filter(e)) {
+          yield withFileTypes ? e : e.fullpath()
+        }
+        if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
+          dirs.add(e)
+        }
+      }
+    }
+  }
+
+  /**
+   * Iterating over a PathWalker performs a synchronous walk.
+   *
+   * Alias for {@link PathWalkerBase.syncIterate}
+   *
+   * Note: As of Node 19, this is somewhat slow, compared to other methods of
+   * walking.  Consider using {@link PathWalkerBase.streamSync} if memory
+   * overhead and backpressure are concerns, or {@link PathWalkerBase.walkSync}
+   * not.
+   */
+  [Symbol.iterator]() {
+    return this.iterateSync()
+  }
+
+  iterateSync(entry?: string | PathBase): Generator<PathBase, void, void>
+  iterateSync(
+    entry: string | PathBase,
+    opts: WalkOptions & { withFileTypes: true }
+  ): Generator<PathBase, void, void>
+  iterateSync(
+    entry: string | PathBase,
+    opts: WalkOptions & { withFileTypes: false }
+  ): Generator<string, void, void>
+  iterateSync(
+    entry: string | PathBase,
+    opts: WalkOptions
+  ): Generator<PathBase | string, void, void>
+  *iterateSync(
+    entry: string | PathBase = this.cwd,
+    {
+      withFileTypes = true,
+      follow = false,
+      filter,
+      walkFilter,
+    }: WalkOptions = { withFileTypes: true }
+  ): Generator<PathBase | string, void, void> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    if (!filter || filter(entry)) {
+      yield withFileTypes ? entry : entry.fullpath()
+    }
+    const dirs = new Set<PathBase>([entry])
+    for (const dir of dirs) {
+      const entries = dir.readdirSync()
+      for (const e of entries) {
+        if (!filter || filter(e)) {
+          yield withFileTypes ? e : e.fullpath()
+        }
+        if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
+          dirs.add(e)
+        }
+      }
+    }
+  }
+
+  /**
+   * Stream form of {@link PathWalkerBase.walk}
+   *
+   * Returns a Minipass stream that emits {@link PathBase} objects by default,
+   * or strings if `{ withFileTypes: false }` is set in the options.
+   */
+  stream(entry?: string | PathBase): Minipass<PathBase>
+  stream(
+    entry: string | PathBase,
+    opts: WalkOptions & { withFileTypes: true }
+  ): Minipass<PathBase>
+  stream(
+    entry: string | PathBase,
+    opts: WalkOptions & { withFileTypes: false }
+  ): Minipass<string>
+  stream(
+    entry: string | PathBase,
+    opts: WalkOptions
+  ): Minipass<string> | Minipass<PathBase>
+  stream(
+    entry: string | PathBase = this.cwd,
+    {
+      withFileTypes = true,
+      follow = false,
+      filter,
+      walkFilter,
+    }: WalkOptions = { withFileTypes: true }
+  ): Minipass<string> | Minipass<PathBase> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    const results = new Minipass<string | PathBase>({ objectMode: true })
+    if (!filter || filter(entry)) {
+      results.write(withFileTypes ? entry : entry.fullpath())
+    }
+    const dirs = new Set<PathBase>()
+    const queue: PathBase[] = [entry]
+    let processing = 0
+    const process = () => {
+      let paused = false
+      while (!paused) {
+        const dir = queue.shift()
+        if (!dir) {
+          if (processing === 0) results.end()
+          return
+        }
+
+        processing++
+        dirs.add(dir)
+
+        const onReaddir = (
+          er: null | NodeJS.ErrnoException,
+          entries: PathBase[]
+        ) => {
+          /* c8 ignore start */
+          if (er) return results.emit('error', er)
+          /* c8 ignore stop */
+          for (const e of entries) {
+            if (!filter || filter(e)) {
+              if (!results.write(withFileTypes ? e : e.fullpath())) {
+                paused = true
+              }
+            }
+          }
+          processing--
+          for (const e of entries) {
+            if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
+              queue.push(e)
+            }
+          }
+          if (paused) results.once('drain', process)
+          else if (!sync) process()
+        }
+
+        // zalgo containment
+        let sync = true
+        dir.readdirCB(onReaddir, true)
+        sync = false
+      }
+    }
+    process()
+    return results as Minipass<string> | Minipass<PathBase>
+  }
+
+  /**
+   * Synchronous form of {@link PathWalkerBase.stream}
+   *
+   * Returns a Minipass stream that emits {@link PathBase} objects by default,
+   * or strings if `{ withFileTypes: false }` is set in the options.
+   *
+   * Will complete the walk in a single tick if the stream is consumed fully.
+   * Otherwise, will pause as needed for stream backpressure.
+   */
+  streamSync(entry?: string | PathBase): Minipass<PathBase>
+  streamSync(
+    entry: string | PathBase,
+    opts: WalkOptions & { withFileTypes: true }
+  ): Minipass<PathBase>
+  streamSync(
+    entry: string | PathBase,
+    opts: WalkOptions & { withFileTypes: false }
+  ): Minipass<string>
+  streamSync(
+    entry: string | PathBase,
+    opts: WalkOptions
+  ): Minipass<PathBase> | Minipass<string>
+  streamSync(
+    entry: string | PathBase = this.cwd,
+    {
+      withFileTypes = true,
+      follow = false,
+      filter,
+      walkFilter,
+    }: WalkOptions = { withFileTypes: true }
+  ): Minipass<string> | Minipass<PathBase> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    const results = new Minipass<string | PathBase>({ objectMode: true })
+    const dirs = new Set<PathBase>()
+    if (!filter || filter(entry)) {
+      results.write(withFileTypes ? entry : entry.fullpath())
+    }
+    const queue: PathBase[] = [entry]
+    let processing = 0
+    const process = () => {
+      let paused = false
+      while (!paused) {
+        const dir = queue.shift()
+        if (!dir) {
+          if (processing === 0) results.end()
+          return
+        }
+        processing++
+        dirs.add(dir)
+
+        const entries = dir.readdirSync()
+        for (const e of entries) {
+          if (!filter || filter(e)) {
+            if (!results.write(withFileTypes ? e : e.fullpath())) {
+              paused = true
+            }
+          }
+        }
+        processing--
+        for (const e of entries) {
+          if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
+            queue.push(e)
+          }
+        }
+      }
+      if (paused) results.once('drain', process)
+    }
+    process()
+    return results as Minipass<string> | Minipass<PathBase>
+  }
+}
+
+const shouldWalk = (
+  e: PathBase,
+  flags: number,
+  follow: boolean,
+  dirs: Set<PathBase>,
+  walkFilter?: (e: PathBase) => boolean
+) =>
+  ((flags & IFDIR) === IFDIR || (follow && (flags & IFLNK) === IFLNK)) &&
+  !(flags & ENOCHILD) &&
+  !dirs.has(e) &&
+  (!walkFilter || walkFilter(e))
+
+/**
+ * Options provided to all walk methods.
+ */
+export interface WalkOptions {
+  /**
+   * Return results as {@link PathBase} objects rather than strings.
+   * When set to false, results are fully resolved paths, as returned by
+   * {@link PathBase.fullname}.
+   * @default true
+   */
+  withFileTypes?: boolean
+  /**
+   * Call readdir() and continue walking symbolic links. Regardless of this
+   * setting, in the case of *cyclical* symbolic links (where the target has
+   * been previously walked), a given link is never followed more than once.
+   *
+   * Note that this *can* result in a directory being walked multiple times,
+   * and thus identical entries appearing in the results multiple times,
+   * because previously walked entries are tracked, but readlink() is not
+   * called on followed symbolic links.
+   * @default false
+   */
+  follow?: boolean
+  /**
+   * Only return entries where the provided function returns true.
+   *
+   * This will not prevent directories from being traversed, even if they do
+   * not pass the filter, though it will prevent directories themselves from
+   * being included in the result set.  See {@link walkFilter}
+   *
+   * By default, if no filter is provided, all entries and traversed
+   * directories are included.
+   */
+  filter?: (entry: PathBase) => boolean
+  /**
+   * Only traverse directories (and in the case of {@link follow} being set to
+   * true, symbolic links to directories) if the provided function returns
+   * true.
+   *
+   * This will not prevent directories from being included in the result set,
+   * even if they do not pass the supplied filter function.  See {@link filter}
+   * to do that.
+   */
+  walkFilter?: (entry: PathBase) => boolean
 }
 
 /**

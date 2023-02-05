@@ -111,6 +111,38 @@ constructor.
     operations, and _much_ slower than `path.resolve()` for
     repeated path resolution.
 
+### Interface `WalkOptions`
+
+The options object that may be passed to all walk methods.
+
+- `withFileTypes`: Boolean, default true. Indicates that `Path`
+  objects should be returned. Set to `false` to get string paths
+  instead.
+- `follow`: Boolean, default false. Attempt to read directory
+  entries from symbolic links. Otherwise, only actual directories
+  are traversed.  Regardless of this setting, in the case of
+  *cyclical* symbolic links, where the target has been previously
+  walked, a given path is never followed more than once.
+
+    Note that this *can* result in a directory being walked
+    multiple times, and thus identical entries appearing in the
+    results multiple times, becasue previously walked entries are
+    tracked, but `readlink()` is not called on the followed
+    symbolic links.
+- `filter`: Function `(entry: Path) => boolean`.  If provided,
+  will prevent the inclusion of any entry for which it returns a
+  falsey value.  This will not prevent directories from being
+  traversed if they do not pass the filter, though it will
+  prevent the directories themselves from being included in the
+  results.  By default, if no filter is provided, then all
+  entries are included in the results.
+- `walkFilter`: Function `(entry: Path) => boolean`.  If
+  provided, will prevent the traversal of any directory (or in
+  the case of `follow:true` symbolic links to directories) for
+  which the function returns false.  This will not prevent the
+  directories themselves from being included in the result set.
+  Use `filter` for that.
+
 ### Class `PathWalker`
 
 The main interface. Defaults to an appropriate class based on
@@ -122,6 +154,39 @@ if implementation-specific behavior is desired.
 #### `const pw = new PathWalker(cwd:string = process.cwd(), opts: PathWalkerOpts)`
 
 Instantiate a new PathWalker object.
+
+#### `async pw.walk(entry?: string | Path, opts?: WalkOptions)`
+
+Walk the directory tree according to the options provided,
+resolving to an array of all entries found.
+
+#### `pw.walkSync(entry?: string | Path, opts?: WalkOptions)`
+
+Walk the directory tree according to the options provided,
+returning an array of all entries found.
+
+#### `pw.iterate(entry?: string | Path, opts?: WalkOptions)`
+
+Iterate over the directory asynchronously, for use with `for
+await of`.  This is also the default async iterator method.
+
+#### `pw.iterateSync(entry?: string | Path, opts?: WalkOptions)`
+
+Iterate over the directory synchronously, for use with `for of`.
+This is also the default sync iterator method.
+
+#### `pw.stream(entry?: string | Path, opts?: WalkOptions)`
+
+Return a [Minipass](http://npm.im/minipass) stream that emits
+each entry or path string in the walk.  Results are made
+available asynchronously.
+
+#### `pw.streamSync(entry?: string | Path, opts?: WalkOptions)`
+
+Return a [Minipass](http://npm.im/minipass) stream that emits
+each entry or path string in the walk.  Results are made
+available synchronously, meaning that the walk will complete in a
+single tick if the stream is fully consumed.
 
 #### `pw.cwd`
 

@@ -122,6 +122,108 @@ const fsWalkSync = (done: () => any) => {
   done()
 }
 
+const pwWalkFreshAsync = (done: () => any) => {
+  new PathWalker(dir).walk().then(done)
+}
+const pwWalkFreshSync = (done: () => any) => {
+  new PathWalker(dir).walkSync()
+  done()
+}
+const pwWalkFreshIterateSync = (done: () => any) => {
+  for (const _ of new PathWalker(dir).iterateSync()) {
+  }
+  done()
+}
+const pwWalkFreshStriterateSync = (done: () => any) => {
+  for (const _ of new PathWalker(dir).streamSync()) {
+  }
+  done()
+}
+// const pwWalkFreshForOf = (done: () => any) => {
+//   for (const _ of new PathWalker(dir)) {
+//   }
+//   done()
+// }
+const pwWalkFreshIterate = (done: () => any) => {
+  const x = async () => {
+    for await (const _ of new PathWalker(dir).iterate()) {
+    }
+  }
+  x().then(done)
+}
+const pwWalkFreshStriterate = (done: () => any) => {
+  const x = async () => {
+    for await (const _ of new PathWalker(dir).stream()) {
+    }
+  }
+  x().then(done)
+}
+// const pwWalkFreshForAwaitOf = (done: () => any) => {
+//   const x = async () => {
+//     for await (const _ of new PathWalker(dir)) {
+//     }
+//   }
+//   x().then(done)
+// }
+const pwWalkFreshStream = (done: () => any) => {
+  new PathWalker(dir).stream().on('end', done).resume()
+}
+const pwWalkFreshStreamSync = (done: () => any) => {
+  new PathWalker(dir).streamSync().resume()
+  done()
+}
+
+const pwWalkReuseAsync = (done: () => any) => {
+  pwReuse.walk().then(done)
+}
+const pwWalkReuseSync = (done: () => any) => {
+  pwReuse.walkSync()
+  done()
+}
+const pwWalkReuseIterateSync = (done: () => any) => {
+  for (const _ of pwReuse.iterateSync()) {
+  }
+  done()
+}
+// const pwWalkReuseForOf = (done: () => any) => {
+//   for (const _ of pwReuse) {
+//   }
+//   done()
+// }
+const pwWalkReuseIterate = (done: () => any) => {
+  const x = async () => {
+    for await (const _ of pwReuse.iterate()) {
+    }
+  }
+  x().then(done)
+}
+// const pwWalkReuseForAwaitOf = (done: () => any) => {
+//   const x = async () => {
+//     for await (const _ of pwReuse) {
+//     }
+//   }
+//   x().then(done)
+// }
+const pwWalkReuseStream = (done: () => any) => {
+  pwReuse.stream().on('end', done).resume()
+}
+const pwWalkReuseStreamSync = (done: () => any) => {
+  pwReuse.streamSync().resume()
+  done()
+}
+const pwWalkReuseStriterate = (done: () => any) => {
+  const x = async () => {
+    for await (const _ of pwReuse.stream()) {
+    }
+  }
+  x().then(done)
+}
+const pwWalkReuseStriterateSync = (done: () => any) => {
+  for (const _ of pwReuse.streamSync()) {
+  }
+  done()
+}
+
 const walkFreshPWSyncRecurse =
   (check: boolean = true) =>
   (done: () => any) => {
@@ -153,7 +255,7 @@ const walkFreshPWSyncRecurse =
 // }
 
 const walkFreshPWCBRecurse =
-  (check: boolean = true) =>
+  (check: boolean = true, zalgo: boolean = false) =>
   (done: () => any) => {
     const pw = new PathWalker(dir)
     const walk = async (path: Path, cb: () => any) => {
@@ -170,7 +272,7 @@ const walkFreshPWCBRecurse =
             next()
           }
         }
-      })
+      }, zalgo)
     }
     walk(pw.cwd, done)
   }
@@ -232,7 +334,6 @@ const walkFreshPWAsyncRecurse =
 //   walk(pw.cwd).then(done)
 // }
 
-const pwAsync = new PathWalker(dir)
 const walkReusePWAsyncRecurse =
   (check: boolean = true) =>
   (done: () => any) => {
@@ -245,11 +346,11 @@ const walkReusePWAsyncRecurse =
       }
       await Promise.all(promises)
     }
-    walk(pwAsync.cwd).then(done)
+    walk(pwReuse.cwd).then(done)
   }
 
 const walkReusePWCBRecurse =
-  (check: boolean = true) =>
+  (check: boolean = true, zalgo: boolean = false) =>
   (done: () => any) => {
     const walk = async (path: Path, cb: () => any) => {
       path.readdirCB((_er, entries) => {
@@ -265,9 +366,9 @@ const walkReusePWCBRecurse =
             next()
           }
         }
-      })
+      }, zalgo)
     }
-    walk(pwAsync.cwd, done)
+    walk(pwReuse.cwd, done)
   }
 
 // this is consistently slower than not using a stack
@@ -275,7 +376,7 @@ const walkReusePWCBRecurse =
 //   (check: boolean = true) =>
 //   (done: () => any) => {
 //     const stack: Path[] = []
-//     const pw = pwAsync
+//     const pw = pwReuse
 //     const walk = async (p: Path) => {
 //       for (const path of await pw.readdir(p)) {
 //         if (!check || path.isDirectory()) {
@@ -303,26 +404,25 @@ const walkReusePWCBRecurse =
 //     const paths: PathBase[] = [p]
 //     let path: PathBase | undefined
 //     while ((path = paths.shift())) {
-//       for (const p of await pwAsync.readdir(path)) {
+//       for (const p of await pwReuse.readdir(path)) {
 //         paths.push(p)
 //       }
 //     }
 //   }
-//   walk(pwAsync.cwd).then(done)
+//   walk(pwReuse.cwd).then(done)
 // }
 
-const pwSync = new PathWalker(dir, { childrenCacheSize: 65536 })
 const walkReusePWSyncRecurse =
   (check: boolean = true) =>
   (done: () => any) => {
     const walk = (p: Path) => {
-      for (const path of pwSync.readdirSync(p)) {
+      for (const path of pwReuse.readdirSync(p)) {
         if (!check || path.isDirectory()) {
           walk(path)
         }
       }
     }
-    walk(pwSync.cwd)
+    walk(pwReuse.cwd)
     done()
   }
 
@@ -331,12 +431,12 @@ const walkReusePWSyncRecurse =
 //     const paths: PathBase[] = [p]
 //     let path: PathBase | undefined
 //     while ((path = paths.shift())) {
-//       for (const p of pwSync.readdirSync(path)) {
+//       for (const p of pwReuse.readdirSync(path)) {
 //         paths.push(p)
 //       }
 //     }
 //   }
-//   walk(pwSync.cwd)
+//   walk(pwReuse.cwd)
 //   done()
 // }
 
@@ -521,6 +621,7 @@ const run = async (fn: (done: () => void) => void) => {
       try {
         await new Promise<void>(res => fn(res))
       } catch (er) {
+        console.error(er)
         return NaN
       }
     }
@@ -536,24 +637,54 @@ const cases: () => (
   | [string, (done: () => void) => void]
   | string
 )[] = () => [
-  'Reuse PathWalker, check isDirectory()',
+  'Fresh PathWalker.walk()',
+  ['stream', pwWalkFreshStream],
+  ['sync stream', pwWalkFreshStreamSync],
+  ['async walk', pwWalkFreshAsync],
+  [' sync walk', pwWalkFreshSync],
+  ['async iter', pwWalkFreshIterate],
+  [' sync iter', pwWalkFreshIterateSync],
+  ['async stream iter', pwWalkFreshStriterate],
+  [' sync stream iter', pwWalkFreshStriterateSync],
+  // no discernable difference between for/[await/]of and
+  // calling the iterator directly.
+  // ['  fao', pwWalkFreshForAwaitOf],
+  // ['   fo', pwWalkFreshForOf],
+
+  'Reuse PathWalker.walk()',
+  ['  stream', pwWalkReuseStream],
+  ['sync stream', pwWalkReuseStreamSync],
+  ['async walk', pwWalkReuseAsync],
+  [' sync walk', pwWalkReuseSync],
+  ['async iter', pwWalkReuseIterate],
+  [' sync iter', pwWalkReuseIterateSync],
+  ['async stream iter', pwWalkReuseStriterate],
+  [' sync stream iter', pwWalkReuseStriterateSync],
+  // ['  fao', pwWalkReuseForAwaitOf],
+  // ['   fo', pwWalkReuseForOf],
+
+  'Reuse PathWalker, manual, check isDirectory()',
   ['async', walkReusePWAsyncRecurse(true)],
   ['   cb', walkReusePWCBRecurse(true)],
+  ['zalgo', walkReusePWCBRecurse(true, true)],
   [' sync', walkReusePWSyncRecurse(true)],
 
-  'Reuse PathWalker, no isDirectory() check',
+  'Reuse PathWalker, manual, no isDirectory() check',
   ['async', walkReusePWAsyncRecurse(false)],
   ['   cb', walkReusePWCBRecurse(false)],
+  ['zalgo', walkReusePWCBRecurse(false, true)],
   [' sync', walkReusePWSyncRecurse(false)],
 
-  'Fresh PathWalker, check isDirectory()',
+  'Fresh PathWalker, manual, check isDirectory()',
   ['async', walkFreshPWAsyncRecurse(true)],
   ['   cb', walkFreshPWCBRecurse(true)],
+  ['zalgo', walkFreshPWCBRecurse(true, true)],
   [' sync', walkFreshPWSyncRecurse(true)],
 
-  'Fresh PathWalker, no isDirectory() check',
+  'Fresh PathWalker, manual, no isDirectory() check',
   ['async', walkFreshPWAsyncRecurse(false)],
   ['   cb', walkFreshPWCBRecurse(false)],
+  ['zalgo', walkFreshPWCBRecurse(false, true)],
   [' sync', walkFreshPWSyncRecurse(false)],
 
   '@nodelib/fs.walk',
@@ -593,9 +724,14 @@ const cases: () => (
   // ['iterative fs readdir async', walkFsReaddirAsyncIterate],
 ]
 
+const pwReuse = new PathWalker(dir)
 const main = async () => {
   setup(dir)
   console.log('showing results in operations / second (bigger is better)')
+  const allCases = cases()
+  const namelen = allCases
+    .filter(a => Array.isArray(a))
+    .reduce((a, b) => Math.max(a, b[0].length), 0)
   for (const entry of cases()) {
     if (entry === 'stop') break
     if (typeof entry === 'string') {
@@ -603,7 +739,7 @@ const main = async () => {
       continue
     }
     const [name, fn] = entry
-    process.stdout.write(`  ${name}: `)
+    process.stdout.write(`  ${name}: `.padStart(namelen + 6))
     const score = await run(fn)
     const r = Math.floor(score)
     const d = '.' + Math.floor((score - r) * 1000)
