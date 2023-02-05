@@ -1001,6 +1001,19 @@ export abstract class PathWalkerBase {
   abstract sep: string | RegExp
 
   /**
+   * The default walk options for all newly created PathWalker instances
+   */
+  static defaultWalkOptions: WalkOptions = {
+    withFileTypes: true,
+    follow: false,
+  }
+
+  /**
+   * The default options for all walk operations performed by this instance
+   */
+  walkOptions: WalkOptions
+
+  /**
    * This class should not be instantiated directly.
    *
    * Use PathWalkerWin32, PathWalkerDarwin, PathWalkerPosix, or PathWalker
@@ -1020,6 +1033,7 @@ export abstract class PathWalkerBase {
     this.rootPath = this.parseRootPath(cwdPath)
     this.#resolveCache = new ResolveCache()
     this.#children = new ChildrenCache(childrenCacheSize)
+    this.walkOptions = Object.assign({}, PathWalkerBase.defaultWalkOptions)
 
     const split = cwdPath.substring(this.rootPath.length).split(sep)
     // resolve('/') leaves '', splits to [''], we don't want that.
@@ -1320,7 +1334,7 @@ export abstract class PathWalkerBase {
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = { withFileTypes: true }
+    }: WalkOptions = this.walkOptions
   ): Promise<PathBase[] | string[]> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -1400,7 +1414,7 @@ export abstract class PathWalkerBase {
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = { withFileTypes: true }
+    }: WalkOptions = this.walkOptions
   ): PathBase[] | string[] {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -1441,7 +1455,8 @@ export abstract class PathWalkerBase {
    * Async generator form of {@link PathWalkerBase.walk}
    *
    * Note: As of Node 19, this is very slow, compared to other methods of
-   * walking.  Consider using {@link PathWalkerBase.stream} if memory overhead
+   * walking, especially if most/all of the directory tree has been previously
+   * walked.  Consider using {@link PathWalkerBase.stream} if memory overhead
    * and backpressure are concerns, or {@link PathWalkerBase.walk} if not.
    */
   iterate(entry?: string | PathBase): AsyncGenerator<PathBase, void, void>
@@ -1457,43 +1472,20 @@ export abstract class PathWalkerBase {
     entry: string | PathBase,
     opts: WalkOptions
   ): AsyncGenerator<PathBase | string, void, void>
-  async *iterate(
+  iterate(
     entry: string | PathBase = this.cwd,
-    {
-      withFileTypes = true,
-      follow = false,
-      filter,
-      walkFilter,
-    }: WalkOptions = { withFileTypes: true }
+    options: WalkOptions = this.walkOptions
   ): AsyncGenerator<PathBase | string, void, void> {
-    if (typeof entry === 'string') {
-      entry = this.cwd.resolve(entry)
-    }
-    if (!filter || filter(entry)) {
-      yield withFileTypes ? entry : entry.fullpath()
-    }
-    const dirs = new Set<PathBase>([entry])
-    for (const dir of dirs) {
-      for (const e of await dir.readdir()) {
-        if (!filter || filter(e)) {
-          yield withFileTypes ? e : e.fullpath()
-        }
-        if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
-          dirs.add(e)
-        }
-      }
-    }
+    // iterating async over the stream is significantly more performant,
+    // especially in the warm-cache scenario, because it buffers up directory
+    // entries in the background instead of waiting for a yield for each one.
+    return this.stream(entry, options)[Symbol.asyncIterator]()
   }
 
   /**
    * Iterating over a PathWalker performs a synchronous walk.
    *
    * Alias for {@link PathWalkerBase.syncIterate}
-   *
-   * Note: As of Node 19, this is somewhat slow, compared to other methods of
-   * walking.  Consider using {@link PathWalkerBase.streamSync} if memory
-   * overhead and backpressure are concerns, or {@link PathWalkerBase.walkSync}
-   * not.
    */
   [Symbol.iterator]() {
     return this.iterateSync()
@@ -1519,7 +1511,7 @@ export abstract class PathWalkerBase {
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = { withFileTypes: true }
+    }: WalkOptions = this.walkOptions
   ): Generator<PathBase | string, void, void> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -1567,7 +1559,7 @@ export abstract class PathWalkerBase {
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = { withFileTypes: true }
+    }: WalkOptions = this.walkOptions
   ): Minipass<string> | Minipass<PathBase> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -1654,7 +1646,7 @@ export abstract class PathWalkerBase {
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = { withFileTypes: true }
+    }: WalkOptions = this.walkOptions
   ): Minipass<string> | Minipass<PathBase> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)

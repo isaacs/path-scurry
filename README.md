@@ -101,15 +101,15 @@ constructor.
   to speed up `resolve()` and `readdir()` calls. Defaults to
   `16 * 1024` (ie, `16384`).
 
-    Setting it to a higher value will run the risk of JS heap
-    allocation errors on large directory trees. Setting it to `256`
-    or smaller will significantly reduce the construction time and
-    data consumption overhead, but with the downside of operations
-    being slower on large directory trees. Setting it to `0` will
-    mean that effectively no operations are cached, and this module
-    will be roughly the same speed as `fs` for file system
-    operations, and _much_ slower than `path.resolve()` for
-    repeated path resolution.
+  Setting it to a higher value will run the risk of JS heap
+  allocation errors on large directory trees. Setting it to `256`
+  or smaller will significantly reduce the construction time and
+  data consumption overhead, but with the downside of operations
+  being slower on large directory trees. Setting it to `0` will
+  mean that effectively no operations are cached, and this module
+  will be roughly the same speed as `fs` for file system
+  operations, and _much_ slower than `path.resolve()` for
+  repeated path resolution.
 
 ### Interface `WalkOptions`
 
@@ -120,26 +120,27 @@ The options object that may be passed to all walk methods.
   instead.
 - `follow`: Boolean, default false. Attempt to read directory
   entries from symbolic links. Otherwise, only actual directories
-  are traversed.  Regardless of this setting, in the case of
-  *cyclical* symbolic links, where the target has been previously
+  are traversed. Regardless of this setting, in the case of
+  _cyclical_ symbolic links, where the target has been previously
   walked, a given path is never followed more than once.
 
-    Note that this *can* result in a directory being walked
-    multiple times, and thus identical entries appearing in the
-    results multiple times, becasue previously walked entries are
-    tracked, but `readlink()` is not called on the followed
-    symbolic links.
-- `filter`: Function `(entry: Path) => boolean`.  If provided,
+  Note that this _can_ result in a directory being walked
+  multiple times, and thus identical entries appearing in the
+  results multiple times, becasue previously walked entries are
+  tracked, but `readlink()` is not called on the followed
+  symbolic links.
+
+- `filter`: Function `(entry: Path) => boolean`. If provided,
   will prevent the inclusion of any entry for which it returns a
-  falsey value.  This will not prevent directories from being
+  falsey value. This will not prevent directories from being
   traversed if they do not pass the filter, though it will
   prevent the directories themselves from being included in the
-  results.  By default, if no filter is provided, then all
+  results. By default, if no filter is provided, then all
   entries are included in the results.
-- `walkFilter`: Function `(entry: Path) => boolean`.  If
+- `walkFilter`: Function `(entry: Path) => boolean`. If
   provided, will prevent the traversal of any directory (or in
   the case of `follow:true` symbolic links to directories) for
-  which the function returns false.  This will not prevent the
+  which the function returns false. This will not prevent the
   directories themselves from being included in the result set.
   Use `filter` for that.
 
@@ -151,9 +152,21 @@ the current platform.
 Use `PathWalkerWin32`, `PathWalkerDarwin`, or `PathWalkerPosix`
 if implementation-specific behavior is desired.
 
+#### Static `PathWalker.defaultWalkOptions: WalkOptions`
+
+The default for the `walkOptions` field on PathWalker
+instances. Edit or modify to affect newly created instances, but
+previously created instances will not be affected.
+
 #### `const pw = new PathWalker(cwd:string = process.cwd(), opts: PathWalkerOpts)`
 
 Instantiate a new PathWalker object.
+
+#### `pw.walkOptions: WalkOptions`
+
+The default options used for all walk operations. Set or modify
+to change the default behavior of future walk operations.
+Existing walk processes will not be affected.
 
 #### `async pw.walk(entry?: string | Path, opts?: WalkOptions)`
 
@@ -168,7 +181,7 @@ returning an array of all entries found.
 #### `pw.iterate(entry?: string | Path, opts?: WalkOptions)`
 
 Iterate over the directory asynchronously, for use with `for
-await of`.  This is also the default async iterator method.
+await of`. This is also the default async iterator method.
 
 #### `pw.iterateSync(entry?: string | Path, opts?: WalkOptions)`
 
@@ -178,13 +191,13 @@ This is also the default sync iterator method.
 #### `pw.stream(entry?: string | Path, opts?: WalkOptions)`
 
 Return a [Minipass](http://npm.im/minipass) stream that emits
-each entry or path string in the walk.  Results are made
+each entry or path string in the walk. Results are made
 available asynchronously.
 
 #### `pw.streamSync(entry?: string | Path, opts?: WalkOptions)`
 
 Return a [Minipass](http://npm.im/minipass) stream that emits
-each entry or path string in the walk.  Results are made
+each entry or path string in the walk. Results are made
 available synchronously, meaning that the walk will complete in a
 single tick if the stream is fully consumed.
 

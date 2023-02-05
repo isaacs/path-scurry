@@ -81,6 +81,6 @@
   },
   "dependencies": {
     "lru-cache": "^7.14.1",
-    "minipass": "^4.0.1"
+    "minipass": "^4.0.2"
   }
 }
