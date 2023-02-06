@@ -4,6 +4,7 @@ import * as fsp from 'fs/promises'
 import { basename, resolve } from 'path'
 import { rimrafSync } from 'rimraf'
 import t from 'tap'
+import { normalizePaths } from './fixtures/normalize-paths'
 
 import {
   Path,
@@ -242,7 +243,7 @@ t.test('lstat', async t => {
 
   const file = pw.lstatSync('exists')
   if (file == undefined) throw new Error('expect file')
-  t.match(file, PathBase)
+  t.type(file, Path)
   t.equal(file.isFile(), true)
   t.equal(file.isDirectory(), false)
   t.equal(file.isSymbolicLink(), false)
@@ -254,7 +255,7 @@ t.test('lstat', async t => {
 
   const dir = pw.lstatSync('dir')
   if (!dir) throw new Error('expect dir to exist')
-  t.match(dir, PathBase)
+  t.type(dir, Path)
   t.equal(pw.dirname(dir), resolve(td))
   t.equal(pw.basename(dir), 'dir')
   t.equal(dir.isFile(), false)
@@ -268,7 +269,7 @@ t.test('lstat', async t => {
 
   const link = pw.lstatSync('link')
   if (!link) throw new Error('expect dir to exist')
-  t.match(link, PathBase)
+  t.type(link, Path)
   t.equal(link.isFile(), false)
   t.equal(link.isDirectory(), false)
   t.equal(link.isSymbolicLink(), true)
@@ -640,6 +641,224 @@ t.test('all the IFMTs!', async t => {
       default:
         onlyOne(t, e, 'should not be here')
         continue
+    }
+  }
+})
+
+t.test('walking', async t => {
+  t.formatSnapshot = normalizePaths
+  const td = t.testdir({
+    a: {
+      b: {
+        c: {
+          d: {
+            e: '',
+            f: '',
+            g: '',
+            link: t.fixture('symlink', '../../..'),
+          },
+        },
+        d: {
+          e: '',
+          f: '',
+          g: '',
+          link: t.fixture('symlink', '../..'),
+        },
+      },
+    },
+  })
+  for (const follow of [false, undefined, true]) {
+    for (const reuse of [false, true]) {
+      t.test(`basic walks, follow=${follow}, reuse=${reuse}`, async t => {
+        let pw = new PathWalker(td)
+        // if not following, then just take the default args when we
+        // walk to get the entries, to cover that code path.
+        const syncWalk = follow
+          ? pw.walkSync('', { follow })
+          : pw.walkSync()
+        const entries = new Set<PathBase>()
+        const paths = new Set<string>()
+
+        const verifyEntry = (e: Path) => {
+          if (!(e instanceof Path)) {
+            throw new Error('expected Path object')
+          }
+          if (reuse) {
+            // same exact entry found.
+            if (!entries.has(e)) {
+              throw new Error('not found in set: ' + e.fullpath())
+            }
+          } else {
+            // some matching entry found
+            for (const entry of entries) {
+              if (entry.fullpath() === e.fullpath()) {
+                return
+              }
+            }
+            throw new Error('not found in set: ' + e.fullpath())
+          }
+        }
+        const verifyPath = (p: string) => {
+          if (typeof p !== 'string') {
+            throw new Error('expected string path')
+          }
+          if (!paths.has(p)) {
+            throw new Error('not found in set: ' + p)
+          }
+        }
+
+        t.test('initial walk, sync', async t => {
+          for (const e of syncWalk) {
+            t.type(e, Path)
+            entries.add(e)
+            paths.add(e.fullpath())
+          }
+        })
+
+        const withFileTypes = false
+        t.test('second walkSync, strings', async t => {
+          if (!reuse) pw = new PathWalker(td)
+          let count = 0
+          for (const path of pw.walkSync('', { follow, withFileTypes })) {
+            verifyPath(path)
+            count++
+            if (count > entries.size) {
+              throw new Error(
+                `too many entries, ${count} > ${entries.size}`
+              )
+            }
+          }
+          t.equal(count, entries.size)
+        })
+
+        t.test('async walk', async t => {
+          if (!reuse) pw = new PathWalker(td)
+          const w = follow ? pw.walk('', { follow }) : pw.walk()
+          let count = 0
+          for (const path of await w) {
+            verifyEntry(path)
+            count++
+            if (count > entries.size) {
+              throw new Error(
+                `too many entries, ${count} > ${entries.size}`
+              )
+            }
+          }
+
+          count = 0
+          if (!reuse) pw = new PathWalker(td)
+          for (const path of await pw.walk('', {
+            follow,
+            withFileTypes,
+          })) {
+            verifyPath(path)
+            count++
+            if (count > entries.size) {
+              throw new Error(
+                `too many entries, ${count} > ${entries.size}`
+              )
+            }
+          }
+          t.equal(count, entries.size)
+        })
+
+        if (!follow) {
+          // default iterators never follow
+          t.test('for [await] of', async t => {
+            if (!reuse) pw = new PathWalker(td)
+            let count = 0
+            for (const path of pw) {
+              verifyEntry(path)
+              count++
+              if (count > entries.size) {
+                throw new Error(
+                  `too many entries, ${count} > ${entries.size}`
+                )
+              }
+            }
+            t.equal(count, entries.size)
+
+            count = 0
+            if (!reuse) pw = new PathWalker(td)
+            for await (const path of pw) {
+              verifyEntry(path)
+              count++
+              if (count > entries.size) {
+                throw new Error(
+                  `too many entries, ${count} > ${entries.size}`
+                )
+              }
+            }
+            t.equal(count, entries.size)
+          })
+        }
+
+        t.test('iterateSync', async t => {
+          if (!reuse) pw = new PathWalker(td)
+          const f = follow
+            ? pw.iterateSync('', { follow })
+            : pw.iterateSync()
+          let count = 0
+          for (const path of f) {
+            verifyEntry(path)
+            count++
+            if (count > entries.size) {
+              throw new Error(
+                `too many entries, ${count} > ${entries.size}`
+              )
+            }
+          }
+          t.equal(count, entries.size)
+
+          if (!reuse) pw = new PathWalker(td)
+          count = 0
+          for (const path of pw.iterateSync('', {
+            follow,
+            withFileTypes,
+          })) {
+            verifyPath(path)
+            count++
+            if (count > entries.size) {
+              throw new Error(
+                `too many entries, ${count} > ${entries.size}`
+              )
+            }
+          }
+          t.equal(count, entries.size)
+        })
+
+        t.test('async iterate', async t => {
+          if (!reuse) pw = new PathWalker(td)
+          const f = follow ? pw.iterate('', { follow }) : pw.iterate()
+          let count = 0
+          for await (const path of f) {
+            verifyEntry(path)
+            count++
+            if (count > entries.size) {
+              throw new Error(
+                `too many entries, ${count} > ${entries.size}`
+              )
+            }
+          }
+          t.equal(count, entries.size)
+
+          count = 0
+          if (!reuse) pw = new PathWalker(td)
+          for await (const path of pw.iterate('', {
+            follow,
+            withFileTypes,
+          })) {
+            verifyPath(path)
+            count++
+            if (count > entries.size) {
+              throw new Error(
+                `too many entries, ${count} > ${entries.size}`
+              )
+            }
+          }
+          t.equal(count, entries.size)
+        })
+      })
     }
   }
 })

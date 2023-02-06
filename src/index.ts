@@ -403,6 +403,14 @@ export abstract class PathBase implements Dirent {
   }
 
   /**
+   * Return the cached link target if the entry has been the subject
+   * of a successful readlink, or undefined otherwise.
+   */
+  readlinkCached() {
+    return this.#linkTarget
+  }
+
+  /**
    * Return the Path object corresponding to the target of a symbolic link.
    *
    * If the Path is not a symbolic link, or if the readlink call fails for any
@@ -1001,19 +1009,6 @@ export abstract class PathWalkerBase {
   abstract sep: string | RegExp
 
   /**
-   * The default walk options for all newly created PathWalker instances
-   */
-  static defaultWalkOptions: WalkOptions = {
-    withFileTypes: true,
-    follow: false,
-  }
-
-  /**
-   * The default options for all walk operations performed by this instance
-   */
-  walkOptions: WalkOptions
-
-  /**
    * This class should not be instantiated directly.
    *
    * Use PathWalkerWin32, PathWalkerDarwin, PathWalkerPosix, or PathWalker
@@ -1033,7 +1028,6 @@ export abstract class PathWalkerBase {
     this.rootPath = this.parseRootPath(cwdPath)
     this.#resolveCache = new ResolveCache()
     this.#children = new ChildrenCache(childrenCacheSize)
-    this.walkOptions = Object.assign({}, PathWalkerBase.defaultWalkOptions)
 
     const split = cwdPath.substring(this.rootPath.length).split(sep)
     // resolve('/') leaves '', splits to [''], we don't want that.
@@ -1317,11 +1311,11 @@ export abstract class PathWalkerBase {
   walk(entry?: string | PathBase): Promise<PathBase[]>
   walk(
     entry: string | PathBase,
-    opts: WalkOptions & { withFileTypes: true }
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
   ): Promise<PathBase[]>
   walk(
     entry: string | PathBase,
-    opts: WalkOptions & { withFileTypes: false }
+    opts: WalkOptionsWithFileTypesFalse
   ): Promise<string[]>
   walk(
     entry: string | PathBase,
@@ -1334,7 +1328,7 @@ export abstract class PathWalkerBase {
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = this.walkOptions
+    }: WalkOptions = {}
   ): Promise<PathBase[] | string[]> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -1366,7 +1360,17 @@ export abstract class PathWalkerBase {
           if (!filter || filter(e)) {
             results.push(withFileTypes ? e : e.fullpath())
           }
-          if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
+          if (follow && e.isSymbolicLink()) {
+            e.readlink().then(() => {
+              if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
+                walk(e, next)
+              } else {
+                next()
+              }
+            })
+          } else if (
+            shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)
+          ) {
             walk(e, next)
           } else {
             next()
@@ -1397,11 +1401,11 @@ export abstract class PathWalkerBase {
   walkSync(entry?: string | PathBase): PathBase[]
   walkSync(
     entry: string | PathBase,
-    opts: WalkOptions & { withFileTypes: true }
+    opts: WalkOptionsWithFileTypesUnset | WalkOptionsWithFileTypesTrue
   ): PathBase[]
   walkSync(
     entry: string | PathBase,
-    opts: WalkOptions & { withFileTypes: false }
+    opts: WalkOptionsWithFileTypesFalse
   ): string[]
   walkSync(
     entry: string | PathBase,
@@ -1414,7 +1418,7 @@ export abstract class PathWalkerBase {
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = this.walkOptions
+    }: WalkOptions = {}
   ): PathBase[] | string[] {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -1429,6 +1433,9 @@ export abstract class PathWalkerBase {
       for (const e of entries) {
         if (!filter || filter(e)) {
           results.push(withFileTypes ? e : e.fullpath())
+        }
+        if (follow && e.isSymbolicLink()) {
+          e.readlinkSync()
         }
         if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
           dirs.add(e)
@@ -1462,11 +1469,11 @@ export abstract class PathWalkerBase {
   iterate(entry?: string | PathBase): AsyncGenerator<PathBase, void, void>
   iterate(
     entry: string | PathBase,
-    opts: WalkOptions & { withFileTypes: true }
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
   ): AsyncGenerator<PathBase, void, void>
   iterate(
     entry: string | PathBase,
-    opts: WalkOptions & { withFileTypes: false }
+    opts: WalkOptionsWithFileTypesFalse
   ): AsyncGenerator<string, void, void>
   iterate(
     entry: string | PathBase,
@@ -1474,7 +1481,7 @@ export abstract class PathWalkerBase {
   ): AsyncGenerator<PathBase | string, void, void>
   iterate(
     entry: string | PathBase = this.cwd,
-    options: WalkOptions = this.walkOptions
+    options: WalkOptions = {}
   ): AsyncGenerator<PathBase | string, void, void> {
     // iterating async over the stream is significantly more performant,
     // especially in the warm-cache scenario, because it buffers up directory
@@ -1494,11 +1501,11 @@ export abstract class PathWalkerBase {
   iterateSync(entry?: string | PathBase): Generator<PathBase, void, void>
   iterateSync(
     entry: string | PathBase,
-    opts: WalkOptions & { withFileTypes: true }
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
   ): Generator<PathBase, void, void>
   iterateSync(
     entry: string | PathBase,
-    opts: WalkOptions & { withFileTypes: false }
+    opts: WalkOptionsWithFileTypesFalse
   ): Generator<string, void, void>
   iterateSync(
     entry: string | PathBase,
@@ -1511,7 +1518,7 @@ export abstract class PathWalkerBase {
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = this.walkOptions
+    }: WalkOptions = {}
   ): Generator<PathBase | string, void, void> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -1525,6 +1532,9 @@ export abstract class PathWalkerBase {
       for (const e of entries) {
         if (!filter || filter(e)) {
           yield withFileTypes ? e : e.fullpath()
+        }
+        if (follow && e.isSymbolicLink()) {
+          e.readlinkSync()
         }
         if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
           dirs.add(e)
@@ -1542,11 +1552,11 @@ export abstract class PathWalkerBase {
   stream(entry?: string | PathBase): Minipass<PathBase>
   stream(
     entry: string | PathBase,
-    opts: WalkOptions & { withFileTypes: true }
+    opts: WalkOptionsWithFileTypesUnset | WalkOptionsWithFileTypesTrue
   ): Minipass<PathBase>
   stream(
     entry: string | PathBase,
-    opts: WalkOptions & { withFileTypes: false }
+    opts: WalkOptionsWithFileTypesFalse
   ): Minipass<string>
   stream(
     entry: string | PathBase,
@@ -1559,7 +1569,7 @@ export abstract class PathWalkerBase {
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = this.walkOptions
+    }: WalkOptions = {}
   ): Minipass<string> | Minipass<PathBase> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -1585,11 +1595,27 @@ export abstract class PathWalkerBase {
 
         const onReaddir = (
           er: null | NodeJS.ErrnoException,
-          entries: PathBase[]
+          entries: PathBase[],
+          didReadlinks: boolean = false
         ) => {
           /* c8 ignore start */
           if (er) return results.emit('error', er)
           /* c8 ignore stop */
+          if (follow && !didReadlinks) {
+            const promises: Promise<PathBase | undefined>[] = []
+            for (const e of entries) {
+              if (e.isSymbolicLink()) {
+                promises.push(e.readlink())
+              }
+            }
+            if (promises.length) {
+              Promise.all(promises).then(() => {
+                onReaddir(null, entries, true)
+              })
+              return
+            }
+          }
+
           for (const e of entries) {
             if (!filter || filter(e)) {
               if (!results.write(withFileTypes ? e : e.fullpath())) {
@@ -1629,11 +1655,11 @@ export abstract class PathWalkerBase {
   streamSync(entry?: string | PathBase): Minipass<PathBase>
   streamSync(
     entry: string | PathBase,
-    opts: WalkOptions & { withFileTypes: true }
+    opts: WalkOptionsWithFileTypesUnset | WalkOptionsWithFileTypesTrue
   ): Minipass<PathBase>
   streamSync(
     entry: string | PathBase,
-    opts: WalkOptions & { withFileTypes: false }
+    opts: WalkOptionsWithFileTypesFalse
   ): Minipass<string>
   streamSync(
     entry: string | PathBase,
@@ -1646,7 +1672,7 @@ export abstract class PathWalkerBase {
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = this.walkOptions
+    }: WalkOptions = {}
   ): Minipass<string> | Minipass<PathBase> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -1679,6 +1705,9 @@ export abstract class PathWalkerBase {
         }
         processing--
         for (const e of entries) {
+          if (follow && e.isSymbolicLink()) {
+            e.readlinkSync()
+          }
           if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
             queue.push(e)
           }
@@ -1695,10 +1724,13 @@ const shouldWalk = (
   e: PathBase,
   flags: number,
   follow: boolean,
-  dirs: Set<PathBase>,
+  dirs: Set<PathBase | undefined>,
   walkFilter?: (e: PathBase) => boolean
-) =>
-  ((flags & IFDIR) === IFDIR || (follow && (flags & IFLNK) === IFLNK)) &&
+): boolean =>
+  ((flags & IFDIR) === IFDIR ||
+    (follow &&
+      (flags & IFLNK) === IFLNK &&
+      !dirs.has(e.readlinkCached()))) &&
   !(flags & ENOCHILD) &&
   !dirs.has(e) &&
   (!walkFilter || walkFilter(e))
@@ -1710,22 +1742,24 @@ export interface WalkOptions {
   /**
    * Return results as {@link PathBase} objects rather than strings.
    * When set to false, results are fully resolved paths, as returned by
-   * {@link PathBase.fullname}.
+   * {@link PathBase.fullpath}.
    * @default true
    */
   withFileTypes?: boolean
+
   /**
-   * Call readdir() and continue walking symbolic links. Regardless of this
-   * setting, in the case of *cyclical* symbolic links (where the target has
-   * been previously walked), a given link is never followed more than once.
+   *  Attempt to read directory entries from symbolic links. Otherwise, only
+   *  actual directories are traversed. Regardless of this setting, a given
+   *  target path will only ever be walked once, meaning that a symbolic link
+   *  to a previously traversed directory will never be followed.
    *
-   * Note that this *can* result in a directory being walked multiple times,
-   * and thus identical entries appearing in the results multiple times,
-   * because previously walked entries are tracked, but readlink() is not
-   * called on followed symbolic links.
+   *  Setting this imposes a slight performance penalty, because `readlink`
+   *  must be called on all symbolic links encountered, in order to avoid
+   *  infinite cycles.
    * @default false
    */
   follow?: boolean
+
   /**
    * Only return entries where the provided function returns true.
    *
@@ -1733,10 +1767,13 @@ export interface WalkOptions {
    * not pass the filter, though it will prevent directories themselves from
    * being included in the result set.  See {@link walkFilter}
    *
+   * Asynchronous functions are not supported here.
+   *
    * By default, if no filter is provided, all entries and traversed
    * directories are included.
    */
   filter?: (entry: PathBase) => boolean
+
   /**
    * Only traverse directories (and in the case of {@link follow} being set to
    * true, symbolic links to directories) if the provided function returns
@@ -1745,8 +1782,21 @@ export interface WalkOptions {
    * This will not prevent directories from being included in the result set,
    * even if they do not pass the supplied filter function.  See {@link filter}
    * to do that.
+   *
+   * Asynchronous functions are not supported here.
    */
   walkFilter?: (entry: PathBase) => boolean
+}
+
+type WalkOptionsWithFileTypesUnset = Pick<
+  WalkOptions,
+  Exclude<keyof WalkOptions, 'withFileTypes'>
+>
+type WalkOptionsWithFileTypesTrue = WalkOptions & {
+  withFileTypes: true
+}
+type WalkOptionsWithFileTypesFalse = WalkOptions & {
+  withFileTypes: false
 }
 
 /**
@@ -1884,9 +1934,8 @@ export class PathWalkerDarwin extends PathWalkerPosix {
  *
  * {@link PathWin32} on Windows systems, {@link PathPosix} on all others.
  */
-export const Path: typeof PathBase =
-  process.platform === 'win32' ? PathWin32 : PathPosix
-export type Path = PathBase
+export const Path = process.platform === 'win32' ? PathWin32 : PathPosix
+export type Path = PathBase | InstanceType<typeof Path>
 
 /**
  * Default {@link PathWalkerBase} implementation for the current platform.
@@ -1903,4 +1952,4 @@ export const PathWalker:
     : process.platform === 'darwin'
     ? PathWalkerDarwin
     : PathWalkerPosix
-export type PathWalker = PathWalkerBase
+export type PathWalker = PathWalkerBase | InstanceType<typeof PathWalker>

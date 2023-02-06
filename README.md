@@ -120,15 +120,13 @@ The options object that may be passed to all walk methods.
   instead.
 - `follow`: Boolean, default false. Attempt to read directory
   entries from symbolic links. Otherwise, only actual directories
-  are traversed. Regardless of this setting, in the case of
-  _cyclical_ symbolic links, where the target has been previously
-  walked, a given path is never followed more than once.
+  are traversed. Regardless of this setting, a given target path
+  will only ever be walked once, meaning that a symbolic link to
+  a previously traversed directory will never be followed.
 
-  Note that this _can_ result in a directory being walked
-  multiple times, and thus identical entries appearing in the
-  results multiple times, becasue previously walked entries are
-  tracked, but `readlink()` is not called on the followed
-  symbolic links.
+  Setting this imposes a slight performance penalty, because
+  `readlink` must be called on all symbolic links encountered, in
+  order to avoid infinite cycles.
 
 - `filter`: Function `(entry: Path) => boolean`. If provided,
   will prevent the inclusion of any entry for which it returns a
@@ -144,6 +142,10 @@ The options object that may be passed to all walk methods.
   directories themselves from being included in the result set.
   Use `filter` for that.
 
+Note that TypeScript return types will only be inferred properly
+from static analysis if the `withFileTypes` option is omitted, or
+a constant `true` or `false` value.
+
 ### Class `PathWalker`
 
 The main interface. Defaults to an appropriate class based on
@@ -151,22 +153,6 @@ the current platform.
 
 Use `PathWalkerWin32`, `PathWalkerDarwin`, or `PathWalkerPosix`
 if implementation-specific behavior is desired.
-
-#### Static `PathWalker.defaultWalkOptions: WalkOptions`
-
-The default for the `walkOptions` field on PathWalker
-instances. Edit or modify to affect newly created instances, but
-previously created instances will not be affected.
-
-#### `const pw = new PathWalker(cwd:string = process.cwd(), opts: PathWalkerOpts)`
-
-Instantiate a new PathWalker object.
-
-#### `pw.walkOptions: WalkOptions`
-
-The default options used for all walk operations. Set or modify
-to change the default behavior of future walk operations.
-Existing walk processes will not be affected.
 
 #### `async pw.walk(entry?: string | Path, opts?: WalkOptions)`
 
@@ -234,6 +220,10 @@ otherwise.
 
 Returns `[]` if no entries are found, or if any error occurs.
 
+Note that TypeScript return types will only be inferred properly
+from static analysis if the `withFileTypes` option is omitted, or
+a constant `true` or `false` value.
+
 #### `pw.readdirSync(dir = pw.cwd, opts?: { withFileTypes: boolean })`
 
 Synchronous `pw.readdir()`
@@ -247,6 +237,10 @@ Returns `undefined` if any error occurs (for example, if the
 argument is not a symbolic link), or a `Path` object if
 `withFileTypes` is explicitly set to `true`, or a string
 otherwise.
+
+Note that TypeScript return types will only be inferred properly
+from static analysis if the `withFileTypes` option is omitted, or
+a constant `true` or `false` value.
 
 #### `pw.readlinkSync(link = pw.cwd, opts?: { withFileTypes: boolean })`
 
