@@ -6,8 +6,11 @@ import {
   readdir as readdirCB,
   readdirSync,
   readlinkSync,
+  realpathSync,
 } from 'fs'
-import { lstat, readdir, readlink } from 'fs/promises'
+// TODO: test perf of fs/promises realpath vs realpathCB,
+// since the promises one uses realpath.native
+import { lstat, readdir, readlink, realpath } from 'fs/promises'
 
 import { Dirent, Stats } from 'fs'
 import Minipass from 'minipass'
@@ -40,17 +43,13 @@ const ENOTDIR = 0b0010_0000
 // (can also be set on lstat errors like EACCES or ENAMETOOLONG)
 const ENOENT = 0b0100_0000
 // cannot have child entries -- also verify &IFMT is either IFDIR or IFLNK
-const ENOCHILD = ENOTDIR | ENOENT
 // set if we fail to readlink
 const ENOREADLINK = 0b1000_0000
-const TYPEMASK = 0b1111_1111
+// set if we know realpath() will fail
+const ENOREALPATH = 0b0001_0000_0000
 
-const canReaddir = (flags: number) => {
-  if (flags & ENOCHILD) return false
-  const ifmt = IFMT & flags
-  if (ifmt === UNKNOWN || ifmt === IFDIR || ifmt === IFLNK) return true
-  return false
-}
+const ENOCHILD = ENOTDIR | ENOENT | ENOREALPATH
+const TYPEMASK = 0b1_1111_1111
 
 const entToType = (s: Dirent | Stats) =>
   s.isFile()
@@ -177,6 +176,7 @@ export abstract class PathBase implements Dirent {
   #type: number
   #children: ChildrenCache
   #linkTarget?: PathBase
+  #realpath?: PathBase
 
   /**
    * Do not create new Path objects directly.  They should always be accessed
@@ -308,7 +308,7 @@ export abstract class PathBase implements Dirent {
     pchild.parent = this
     pchild.#fullpath = fullpath
 
-    if (!canReaddir(this.#type)) {
+    if (!this.canReaddir()) {
       pchild.#type |= ENOENT
     }
 
@@ -333,13 +333,6 @@ export abstract class PathBase implements Dirent {
     const pv = p.fullpath()
     const fp = pv + (!p.parent ? '' : this.sep) + name
     return (this.#fullpath = fp)
-  }
-
-  /**
-   * get the flags number
-   */
-  getFlags(): number {
-    return this.#type
   }
 
   /**
@@ -439,7 +432,7 @@ export abstract class PathBase implements Dirent {
         return (this.#linkTarget = linkTarget)
       }
     } catch (er) {
-      this.#readlinkFail(er as NodeJS.ErrnoException)
+      this.#readlinkFail((er as NodeJS.ErrnoException).code)
       return undefined
     }
   }
@@ -468,7 +461,7 @@ export abstract class PathBase implements Dirent {
         return (this.#linkTarget = linkTarget)
       }
     } catch (er) {
-      this.#readlinkFail(er as NodeJS.ErrnoException)
+      this.#readlinkFail((er as NodeJS.ErrnoException).code)
       return undefined
     }
   }
@@ -513,6 +506,12 @@ export abstract class PathBase implements Dirent {
     }
   }
 
+  #markENOREALPATH() {
+    if (this.#type & ENOREALPATH) return
+    this.#type |= ENOREALPATH
+    this.#markENOTDIR()
+  }
+
   // save the information when we know the entry is not a dir
   #markENOTDIR() {
     // entry is not a directory, so any children can't exist.
@@ -541,25 +540,25 @@ export abstract class PathBase implements Dirent {
     }
   }
 
-  #lstatFail(er: NodeJS.ErrnoException) {
+  #lstatFail(code: string = '') {
     // Windows just raises ENOENT in this case, disable for win CI
     /* c8 ignore start */
-    if (er.code === 'ENOTDIR') {
+    if (code === 'ENOTDIR') {
       // already know it has a parent by this point
       const p = this.parent as PathBase
       p.#markENOTDIR()
-    } else if (er.code === 'ENOENT') {
+    } else if (code === 'ENOENT') {
       /* c8 ignore stop */
       this.#markENOENT()
     }
   }
 
-  #readlinkFail(er: NodeJS.ErrnoException) {
+  #readlinkFail(code: string = '') {
     let ter = this.#type
     ter |= ENOREADLINK
-    if (er.code === 'ENOENT') ter |= ENOENT
+    if (code === 'ENOENT') ter |= ENOENT
     // windows gets a weird error when you try to readlink a file
-    if (er.code === 'EINVAL' || er.code === 'UNKNOWN') {
+    if (code === 'EINVAL' || code === 'UNKNOWN') {
       // exists, but not a symlink, we don't know WHAT it is, so remove
       // all IFMT bits.
       ter &= IFMT_UNKNOWN
@@ -568,7 +567,7 @@ export abstract class PathBase implements Dirent {
     // windows just gets ENOENT in this case.  We do cover the case,
     // just disabled because it's impossible on Windows CI
     /* c8 ignore start */
-    if (er.code === 'ENOTDIR' && this.parent) {
+    if (code === 'ENOTDIR' && this.parent) {
       this.parent.#markENOTDIR()
     }
     /* c8 ignore stop */
@@ -613,7 +612,8 @@ export abstract class PathBase implements Dirent {
     c: Children
   ): PathBase {
     const v = p.name
-    p.#type = entToType(e)
+    // retain any other flags, but set ifmt from dirent
+    p.#type = (p.#type & IFMT_UNKNOWN) | entToType(e)
     // case sensitivity fixing when we learn the true name.
     if (v !== e.name) p.name = e.name
 
@@ -652,7 +652,7 @@ export abstract class PathBase implements Dirent {
           entToType(await lstat(this.fullpath()))
         return this
       } catch (er) {
-        this.#lstatFail(er as NodeJS.ErrnoException)
+        this.#lstatFail((er as NodeJS.ErrnoException).code)
       }
     }
   }
@@ -669,7 +669,7 @@ export abstract class PathBase implements Dirent {
           entToType(lstatSync(this.fullpath()))
         return this
       } catch (er) {
-        this.#lstatFail(er as NodeJS.ErrnoException)
+        this.#lstatFail((er as NodeJS.ErrnoException).code)
       }
     }
   }
@@ -694,7 +694,7 @@ export abstract class PathBase implements Dirent {
     cb: (er: NodeJS.ErrnoException | null, entries: PathBase[]) => any,
     allowZalgo: boolean = false
   ): void {
-    if (!canReaddir(this.#type)) {
+    if (!this.canReaddir()) {
       if (allowZalgo) cb(null, [])
       else queueMicrotask(() => cb(null, []))
       return
@@ -736,13 +736,23 @@ export abstract class PathBase implements Dirent {
    * mutated.
    */
   async readdir(): Promise<PathBase[]> {
-    if (!canReaddir(this.#type)) {
+    if (!this.canReaddir()) {
       return []
     }
 
     const children = this.children()
     if (this.#calledReaddir()) {
       return children.slice(0, children.provisional)
+    }
+
+    const target = this.isSymbolicLink()
+      ? this.#linkTarget || (await this.realpath())
+      : this
+    if (!target) {
+      this.#readdirFail('ENOTDIR')
+      return []
+    } else if (target !== this) {
+      return target.readdir()
     }
 
     // else read the directory, fill up children
@@ -764,13 +774,25 @@ export abstract class PathBase implements Dirent {
    * synchronous {@link PathBase.readdir}
    */
   readdirSync(): PathBase[] {
-    if (!canReaddir(this.#type)) {
+    if (!this.canReaddir()) {
       return []
     }
 
     const children = this.children()
     if (this.#calledReaddir()) {
       return children.slice(0, children.provisional)
+    }
+
+    // readlinks read the dir target, but we need to attach children
+    // there, not here, or else walks get *super* weird.
+    const target = this.isSymbolicLink()
+      ? this.#realpath || this.realpathSync()
+      : this
+    if (!target) {
+      this.#readdirFail('ENOTDIR')
+      return []
+    } else if (target !== this) {
+      return target.readdirSync()
     }
 
     // else read the directory, fill up children
@@ -786,6 +808,66 @@ export abstract class PathBase implements Dirent {
       children.provisional = 0
     }
     return children.slice(0, children.provisional)
+  }
+
+  canReaddir() {
+    if (this.#type & ENOCHILD) return false
+    const ifmt = IFMT & this.#type
+    if (ifmt === UNKNOWN || ifmt === IFDIR || ifmt === IFLNK) return true
+    return false
+  }
+
+  shouldWalk(
+    dirs: Set<PathBase | undefined>,
+    walkFilter?: (e: PathBase) => boolean
+  ): PathBase | false {
+    return (this.#type & IFDIR) === IFDIR &&
+      !(this.#type & ENOCHILD) &&
+      !dirs.has(this) &&
+      (!walkFilter || walkFilter(this))
+      ? this.#linkTarget || this
+      : false
+  }
+
+  /**
+   * internal
+   */
+  realpathCached(): PathBase | undefined {
+    return this.#realpath
+  }
+
+  /**
+   * Return the Path object corresponding to path as resolved
+   * by realpath(3).
+   *
+   * If the realpath call fails for any reason, `undefined` is returned.
+   *
+   * Result is cached, and thus may be outdated if the filesystem is mutated.
+   * On success, returns a Path object.
+   */
+  async realpath(): Promise<PathBase | undefined> {
+    if (this.#realpath) return this.#realpath
+    if ((ENOREALPATH | ENOREADLINK) & this.#type) return undefined
+    try {
+      const rp = await realpath(this.fullpath())
+      return (this.#realpath = this.resolve(rp))
+    } catch (_) {
+      this.#markENOREALPATH()
+    }
+  }
+
+  /**
+   * Synchronous {@link realpath}
+   */
+  realpathSync(): PathBase | undefined {
+    if (this.#realpath) return this.#realpath
+    if ((ENOREALPATH | ENOREADLINK) & this.#type) return undefined
+    try {
+      const rp = realpathSync(this.fullpath())
+      return (this.#realpath = this.resolve(rp))
+    } catch (_) {
+      this.#markENOREALPATH()
+    }
   }
 }
 
@@ -1156,8 +1238,7 @@ export abstract class PathWalkerBase {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
     }
-    const flags = entry.getFlags()
-    if (!canReaddir(flags)) {
+    if (!entry.canReaddir()) {
       return []
     } else {
       const p = await entry.readdir()
@@ -1189,8 +1270,7 @@ export abstract class PathWalkerBase {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
     }
-    const flags = entry.getFlags()
-    if (!canReaddir(flags)) {
+    if (!entry.canReaddir()) {
       return []
     } else if (withFileTypes) {
       return entry.readdirSync()
@@ -1301,6 +1381,69 @@ export abstract class PathWalkerBase {
   }
 
   /**
+   * Return the Path object or string path corresponding to path as resolved
+   * by realpath(3).
+   *
+   * If the realpath call fails for any reason, `undefined` is returned.
+   *
+   * Result is cached, and thus may be outdated if the filesystem is mutated.
+   *
+   * `{withFileTypes}` option defaults to `false`.
+   *
+   * On success, returns a Path object if `withFileTypes` option is true,
+   * otherwise a string.
+   */
+  realpath(
+    entry: string | PathBase,
+    opt?: { withFileTypes: false }
+  ): Promise<string | undefined>
+  realpath(
+    entry: string | PathBase,
+    opt: { withFileTypes: true }
+  ): Promise<PathBase | undefined>
+  realpath(
+    entry: string | PathBase,
+    opt: { withFileTypes: boolean }
+  ): Promise<string | PathBase | undefined>
+  async realpath(
+    entry: string | PathBase,
+    { withFileTypes }: { withFileTypes: boolean } = {
+      withFileTypes: false,
+    }
+  ): Promise<string | PathBase | undefined> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    const e = await entry.realpath()
+    return withFileTypes ? e : e?.fullpath()
+  }
+
+  realpathSync(
+    entry: string | PathBase,
+    opt?: { withFileTypes: false }
+  ): string | undefined
+  realpathSync(
+    entry: string | PathBase,
+    opt: { withFileTypes: true }
+  ): PathBase | undefined
+  realpathSync(
+    entry: string | PathBase,
+    opt: { withFileTypes: boolean }
+  ): string | PathBase | undefined
+  realpathSync(
+    entry: string | PathBase,
+    { withFileTypes }: { withFileTypes: boolean } = {
+      withFileTypes: false,
+    }
+  ): string | PathBase | undefined {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    const e = entry.realpathSync()
+    return withFileTypes ? e : e?.fullpath()
+  }
+
+  /**
    * Asynchronously walk the directory tree, returning an array of
    * all path strings or Path objects found.
    *
@@ -1361,19 +1504,19 @@ export abstract class PathWalkerBase {
             results.push(withFileTypes ? e : e.fullpath())
           }
           if (follow && e.isSymbolicLink()) {
-            e.readlink().then(() => {
-              if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
-                walk(e, next)
+            e.realpath().then(r => {
+              if (r?.shouldWalk(dirs, walkFilter)) {
+                walk(r, next)
               } else {
                 next()
               }
             })
-          } else if (
-            shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)
-          ) {
-            walk(e, next)
           } else {
-            next()
+            if (e.shouldWalk(dirs, walkFilter)) {
+              walk(e, next)
+            } else {
+              next()
+            }
           }
         }
       }, true) // zalgooooooo
@@ -1434,11 +1577,12 @@ export abstract class PathWalkerBase {
         if (!filter || filter(e)) {
           results.push(withFileTypes ? e : e.fullpath())
         }
-        if (follow && e.isSymbolicLink()) {
-          e.readlinkSync()
+        let r: PathBase | undefined = e
+        if (e.isSymbolicLink()) {
+          if (!(follow && (r = e.realpathSync()))) continue
         }
-        if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
-          dirs.add(e)
+        if (r.shouldWalk(dirs, walkFilter)) {
+          dirs.add(r)
         }
       }
     }
@@ -1533,11 +1677,12 @@ export abstract class PathWalkerBase {
         if (!filter || filter(e)) {
           yield withFileTypes ? e : e.fullpath()
         }
-        if (follow && e.isSymbolicLink()) {
-          e.readlinkSync()
+        let r: PathBase | undefined = e
+        if (e.isSymbolicLink()) {
+          if (!(follow && (r = e.realpathSync()))) continue
         }
-        if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
-          dirs.add(e)
+        if (r.shouldWalk(dirs, walkFilter)) {
+          dirs.add(r)
         }
       }
     }
@@ -1605,28 +1750,30 @@ export abstract class PathWalkerBase {
             const promises: Promise<PathBase | undefined>[] = []
             for (const e of entries) {
               if (e.isSymbolicLink()) {
-                promises.push(e.readlink())
+                promises.push(e.realpath())
               }
             }
             if (promises.length) {
-              Promise.all(promises).then(() => {
+              Promise.all(promises).then(() =>
                 onReaddir(null, entries, true)
-              })
+              )
               return
             }
           }
 
           for (const e of entries) {
-            if (!filter || filter(e)) {
+            if (e && (!filter || filter(e))) {
               if (!results.write(withFileTypes ? e : e.fullpath())) {
                 paused = true
               }
             }
           }
+
           processing--
           for (const e of entries) {
-            if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
-              queue.push(e)
+            const r = e.realpathCached() || e
+            if (r.shouldWalk(dirs, walkFilter)) {
+              queue.push(r)
             }
           }
           if (paused) results.once('drain', process)
@@ -1705,11 +1852,12 @@ export abstract class PathWalkerBase {
         }
         processing--
         for (const e of entries) {
-          if (follow && e.isSymbolicLink()) {
-            e.readlinkSync()
+          let r: PathBase | undefined = e
+          if (e.isSymbolicLink()) {
+            if (!(follow && (r = e.realpathSync()))) continue
           }
-          if (shouldWalk(e, e.getFlags(), follow, dirs, walkFilter)) {
-            queue.push(e)
+          if (r.shouldWalk(dirs, walkFilter)) {
+            queue.push(r)
           }
         }
       }
@@ -1719,21 +1867,6 @@ export abstract class PathWalkerBase {
     return results as Minipass<string> | Minipass<PathBase>
   }
 }
-
-const shouldWalk = (
-  e: PathBase,
-  flags: number,
-  follow: boolean,
-  dirs: Set<PathBase | undefined>,
-  walkFilter?: (e: PathBase) => boolean
-): boolean =>
-  ((flags & IFDIR) === IFDIR ||
-    (follow &&
-      (flags & IFLNK) === IFLNK &&
-      !dirs.has(e.readlinkCached()))) &&
-  !(flags & ENOCHILD) &&
-  !dirs.has(e) &&
-  (!walkFilter || walkFilter(e))
 
 /**
  * Options provided to all walk methods.

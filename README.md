@@ -97,6 +97,12 @@ constructor.
 - `nocase`: Boolean indicating that file names should be compared
   case-insensitively. Defaults to `true` on darwin and win32
   implementations, `false` elsewhere.
+
+  **Warning** Performing case-insensitive matching on a
+  case-sensitive filesystem will result in occasionally very
+  bizarre behavior. Performing case-sensitive matching on a
+  case-insensitive filesystem may negatively impact performance.
+
 - `childrenCacheSize`: Number of child entries to cache, in order
   to speed up `resolve()` and `readdir()` calls. Defaults to
   `16 * 1024` (ie, `16384`).
