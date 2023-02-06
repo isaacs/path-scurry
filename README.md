@@ -25,15 +25,110 @@ folder tree, such that:
    means it has to track "provisional" child nodes that may not
    exist (and if we find that they _don't_ exist, store that
    information as well, so we don't have to ever check again).
-4. The results are _not_ represented as a stream, and do not
-   require any sort of filter or decision functions. Every step
-   should be 100% deliberate, just like using the normal `fs`
-   operations.
+4. The API is not limited to use as a stream/iterator/etc.  There
+   are many cases where an API like node's `fs` is preferrable.
 5. It's more important to prevent excess syscalls than to be up
    to date, but it should be smart enough to know what it
    _doesn't_ know, and go get it seamlessly when requested.
 6. Do not blow up the JS heap allocation if operating on a
    directory with a huge number of entries.
+
+## PERFORMANCE
+
+JavaScript people throw around the word "blazing" a lot. I hope
+that this module doesn't blaze anyone. But it does go very fast,
+in the cases it's optimized for, if used properly.
+
+PathWalker provides ample opportunities to get extremely good
+performance, as well as several options to trade performance for
+convenience.
+
+Benchmarks can be run by executing `npm run bench`.
+
+As is always the case, doing more means going slower, doing
+less means going faster, and there are trade offs between speed
+and memory usage.
+
+PathWalker makes heavy use of [LRUCache](http://npm.im/lru-cache)
+to efficiently cache whatever it can, and `Path` objects remain
+in the graph for the lifetime of the walker, so repeated calls
+with a single PathWalker object will be extremely fast. However,
+adding items to a cold cache means "doing more", so in those
+cases. Nothing is free, but every effort has been made to reduce
+costs wherever possible.
+
+Also, note that a "cache as long as possible" approach means that
+changes to the filesystem may not be reflected in the results of
+repeated PathWalker operations.
+
+For resolving string paths, `PathWalker` ranges from
+5-50 times faster than `path.resolve` on repeated resolutions,
+but around 100 to 1000 times _slower_ on the first resolution.
+If your program is spending a lot of time resolving the _same_
+paths repeatedly, then this can be beneficial. But `path.resolve`
+is pretty fast, and improving performance frlm 4M operations per
+second to 40M operations per second is not going to move the
+needle.
+
+For walking file system paths, again a lot depends on how often a
+given PathWalker object will be used, but also the walk method
+used.
+
+With default settings on a folder tree of 100,000 items,
+consisting of around a 10-to-1 ratio of normal files to
+directories, PathWalker performs comparably to
+[@nodelib/fs.walk](http://npm.im/@nodelib/fs.walk), which is the
+fastest and most reliable file system walker I could find. On my
+machine, that is about 1000-1200 completed walks per second for
+async or stream walks, and around 500-600 walks per second
+synchronously.
+
+In the warm cache state, PathWalker's performance increases
+around 4x for async `for await` iteration, 10-15x faster for
+streams and synchronous `for of` iteration, and anywhere from 30x
+to 80x faster for the rest.
+
+```
+# walk 100,000 fs entries, 10/1 file/dir ratio
+# operations / ms
+ New PathWalker object  |  Reuse PathWalker object
+     stream:  1112.589  |  13974.917
+sync stream:   492.718  |  15028.343
+ async walk:  1095.648  |  32706.395
+  sync walk:   527.632  |  46129.772
+ async iter:  1288.821  |   5045.510
+  sync iter:   498.496  |  17920.746
+```
+
+A hand-rolled walk calling `entry.readdir()` and recursing
+through the entries can benefit even more from caching, with
+greater flexibility and without the overhead of streams or
+generators. The cold cache state is still limited by the costs
+of file system operations, but with a warm cache, the only
+bottleneck is CPU speed and VM optimizations. Of course, in that
+case, some care must be taken to ensure that you don't lose
+performance as a result of silly mistakes, like calling
+`readdir()` on entries that you know are not directories.
+
+```
+# manual recursive iteration functions
+      cold cache  |  warm cache
+async:  1164.901  |  17923.320
+   cb:  1101.127  |  40999.344
+zalgo:  1082.240  |  66689.936
+ sync:   526.935  |  87097.591
+```
+
+In this case, the speed improves by around 10-20x in the async
+case, 40x in the case of using `entry.readdirCB` with protections
+against synchronous callbacks, and 50-100x with callback
+deferrals disabled, and *several hundred times faster* for
+synchronous iteration.
+
+If you can think of a case that is not covered in these
+benchmarks, or an implementation that performs significantly
+better than PathWalker, please [let me
+know](https://github.com/isaacs/path-walker/issues).
 
 ## USAGE
 
@@ -48,32 +143,43 @@ const { PathWalker, Path } = require('path-walker')
 // note that the API is very similar to just a
 // naive walk with fs.readdir()
 import { unlink } from 'fs/promises'
+
+// easy way, iterate over the directory and do the thing
+const pw = new PathWalker(process.cwd())
+for await (const entry of pw) {
+  if (entry.isFile() && entry.name === '.DS_Store') {
+    unlink(entry.fullpath())
+  }
+}
+
+// here it is as a manual recursive method
 const walk = async (entry: Path) => {
   const promises: Promise<any> = []
   // readdir doesn't throw on non-directories, it just doesn't
   // return any entries, to save stack trace costs.
   // Items are returned in arbitrary unsorted order
   for (const child of await pw.readdir(entry)) {
-    // each child is a uint32 pointer in a PointerSet
+    // each child is a Path object
     if (child.name === '.DS_Store' && child.isFile()) {
       // could also do pw.resolve(entry, child.name),
       // just like fs.readdir walking, but .fullpath is
       // a *slightly* more efficient shorthand.
       promises.push(unlink(child.fullpath()))
-    } else {
+    } else if (child.isDirectory()) {
       promises.push(walk(child))
     }
   }
   return Promise.all(promises)
 }
-const pw = new PathWalker(process.cwd())
+
 walk(pw.cwd).then(() => {
   console.log('all .DS_Store files removed')
 })
 
-const pw2 = new PathWalker('/a/b/c')
-const relativeDir = pw2.cwd.resolve('../x') // pointer to entry for '/a/b/x'
-const relative2 = pw2.cwd.resolve('/a/b/d/../x') // same path, same pointer
+const pw2 = new PathWalker('/a/b/c') // pw2.cwd is the Path for /a/b/c
+const relativeDir = pw2.cwd.resolve('../x') // Path entry for '/a/b/x'
+const relative2 = pw2.cwd.resolve('/a/b/d/../x') // same path, same entry
+assert.equal(relativeDir, relative2)
 ```
 
 ## API

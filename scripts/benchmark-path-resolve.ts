@@ -1,4 +1,4 @@
-#!/usr/bin/env node --expose_gc --loader=ts-node/esm
+#!/usr/bin/env node --expose_gc --loader=ts-node/esm --no-warnings
 
 console.log('Testing performance compared with path.resolve()')
 

@@ -33,7 +33,8 @@
     "test": "c8 tap",
     "snap": "c8 tap",
     "format": "prettier --write . --loglevel warn",
-    "typedoc": "typedoc --tsconfig tsconfig-esm.json ./src/*.ts"
+    "typedoc": "typedoc --tsconfig tsconfig-esm.json ./src/*.ts",
+    "bench": "bash ./scripts/bench.sh"
   },
   "prettier": {
     "semi": false,
