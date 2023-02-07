@@ -1,5 +1,6 @@
 {
   "navigationLinks": {
-    "isaacs projects": "https://isaacs.github.io/"
+    "isaacs projects": "https://isaacs.github.io/",
+    "benchmarks": "benchmarks.txt"
   }
 }
