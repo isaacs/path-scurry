@@ -58,8 +58,8 @@ to efficiently cache whatever it can, and `Path` objects remain
 in the graph for the lifetime of the walker, so repeated calls
 with a single PathScurry object will be extremely fast. However,
 adding items to a cold cache means "doing more", so in those
-cases. Nothing is free, but every effort has been made to reduce
-costs wherever possible.
+cases, we pay a price. Nothing is free, but every effort has been
+made to reduce costs wherever possible.
 
 Also, note that a "cache as long as possible" approach means that
 changes to the filesystem may not be reflected in the results of
