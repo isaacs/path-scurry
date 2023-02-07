@@ -10,10 +10,10 @@ import {
   Path,
   PathBase,
   PathPosix,
-  PathWalker,
-  PathWalkerDarwin,
-  PathWalkerPosix,
-  PathWalkerWin32,
+  PathScurry,
+  PathScurryDarwin,
+  PathScurryPosix,
+  PathScurryWin32,
   PathWin32,
   WalkOptions,
 } from '../'
@@ -58,13 +58,13 @@ t.test('platform-specific', t => {
 
   t.test('default (no override)', t => {
     if (platform === 'win32') {
-      t.equal(PathWalker, PathWalkerWin32, 'expect windows walker')
+      t.equal(PathScurry, PathScurryWin32, 'expect windows Scurry')
       t.equal(Path, PathWin32, 'expect windows path')
     } else if (platform === 'darwin') {
-      t.equal(PathWalker, PathWalkerDarwin, 'expect darwin walker')
+      t.equal(PathScurry, PathScurryDarwin, 'expect darwin Scurry')
       t.equal(Path, PathPosix, 'expect posix path')
     } else {
-      t.equal(PathWalker, PathWalkerPosix, 'expect posix')
+      t.equal(PathScurry, PathScurryPosix, 'expect posix')
       t.equal(Path, PathPosix, 'expect posix path')
     }
     t.end()
@@ -73,16 +73,16 @@ t.test('platform-specific', t => {
   t.test('force windows', t => {
     t.teardown(() => setPlatform())
     setPlatform('win32')
-    const { PathWalker, PathWalkerWin32, Path, PathWin32 } = t.mock(
+    const { PathScurry, PathScurryWin32, Path, PathWin32 } = t.mock(
       '../',
       {}
     )
     t.teardown(() => setCWD())
     setCWD('win32')
-    t.equal(PathWalker, PathWalkerWin32, 'expect windows walker')
+    t.equal(PathScurry, PathScurryWin32, 'expect windows Scurry')
     t.equal(Path, PathWin32, 'expect windows path')
-    const pw = new PathWalker()
-    t.equal(pw.nocase, true, 'nocase on PathWalker')
+    const pw = new PathScurry()
+    t.equal(pw.nocase, true, 'nocase on PathScurry')
     t.equal(pw.cwd.nocase, true, 'nocase on Path')
     t.equal(pw.resolve(), 'C:\\some\\path')
     t.equal(pw.cwd.fullpath(), 'C:\\some\\path')
@@ -107,24 +107,24 @@ t.test('platform-specific', t => {
     t.equal(pw.resolve('//?/D:/X/y\\z\\a/../B'), 'D:\\x\\y\\z\\b')
     t.equal(pw.resolve('//prp1/'), 'C:\\prp1')
     t.equal(pw.cwd.resolve('../../../../../../../'), pw.root)
-    t.equal(new PathWalker('/prp2').cwd.fullpath(), 'C:\\prp2')
-    t.equal(new PathWalker('\\prp3').resolve(), 'C:\\prp3')
+    t.equal(new PathScurry('/prp2').cwd.fullpath(), 'C:\\prp2')
+    t.equal(new PathScurry('\\prp3').resolve(), 'C:\\prp3')
     t.end()
   })
 
   t.test('force darwin', t => {
     t.teardown(() => setPlatform())
     setPlatform('darwin')
-    const { PathWalker, PathWalkerDarwin, Path, PathPosix } = t.mock(
+    const { PathScurry, PathScurryDarwin, Path, PathPosix } = t.mock(
       '../',
       {}
     )
     t.teardown(() => setCWD())
     setCWD('posix')
-    t.equal(PathWalker, PathWalkerDarwin, 'expect darwin walker')
+    t.equal(PathScurry, PathScurryDarwin, 'expect darwin Scurry')
     t.equal(Path, PathPosix, 'expect posix path')
-    const pw = new PathWalker()
-    t.equal(pw.nocase, true, 'nocase on PathWalker')
+    const pw = new PathScurry()
+    t.equal(pw.nocase, true, 'nocase on PathScurry')
     t.equal(pw.cwd.nocase, true, 'nocase on Path')
     t.equal(pw.cwd.fullpath(), '/some/path')
     t.equal(pw.dirname(pw.root), '/')
@@ -141,18 +141,18 @@ t.test('platform-specific', t => {
   t.test('force posix', t => {
     t.teardown(() => setPlatform())
     setPlatform('posix')
-    const { PathWalker, PathWalkerPosix, Path, PathPosix } = t.mock(
+    const { PathScurry, PathScurryPosix, Path, PathPosix } = t.mock(
       '../',
       {}
     )
     t.teardown(() => setCWD())
     setCWD('posix')
-    t.equal(PathWalker, PathWalkerPosix, 'expect posix walker')
+    t.equal(PathScurry, PathScurryPosix, 'expect posix Scurry')
     t.equal(Path, PathPosix, 'expect posix path')
-    const pw = new PathWalker()
+    const pw = new PathScurry()
     t.equal(pw.cwd.fullpath(), '/some/path')
     t.equal(pw.resolve('foo'), '/some/path/foo')
-    t.equal(pw.nocase, false, 'nocase on PathWalker')
+    t.equal(pw.nocase, false, 'nocase on PathScurry')
     t.equal(pw.cwd.nocase, false, 'nocase on Path')
     t.equal(pw.cwd.fullpath(), '/some/path')
     t.equal(pw.resolve('foo'), '/some/path/foo')
@@ -177,7 +177,7 @@ t.test('readlink', async t => {
       file: 'f',
     },
   })
-  const pw = new PathWalker(dir)
+  const pw = new PathScurry(dir)
   const wft = { withFileTypes: true }
   t.equal(await pw.readlink('link', wft), pw.cwd.resolve('hello'))
   t.equal(pw.readlinkSync('link', wft), pw.cwd.resolve('hello'))
@@ -229,7 +229,7 @@ t.test('lstat', async t => {
     dir: {},
     link: t.fixture('symlink', 'exists'),
   })
-  const pw = new PathWalker(td)
+  const pw = new PathScurry(td)
   t.equal(pw.dirname('exists'), resolve(td))
   t.equal(pw.basename(resolve(td) + '/exists'), 'exists')
   t.equal(pw.cwd.resolve('exists').isUnknown(), true)
@@ -294,7 +294,7 @@ t.test('readdir, simple basic', async t => {
     file1: '1',
     file2: '2',
   })
-  const pw = new PathWalker(td)
+  const pw = new PathScurry(td)
   t.match(
     new Set(await pw.readdir('dir')),
     new Set([{ name: 'some' }, { name: 'entries' }])
@@ -429,7 +429,7 @@ t.test('readdir with provisionals', async t => {
 
   t.test('one provisional', async t => {
     // play with nocase to show that promotion sets the known name.
-    const pw = new PathWalker(td, { nocase: true })
+    const pw = new PathScurry(td, { nocase: true })
     t.equal(pw.resolve('A'), resolve(td, 'A'))
     t.equal(pw.resolve('a'), resolve(td, 'A'))
     t.equal(pw.cwd.resolve('A').isUnknown(), true)
@@ -443,7 +443,7 @@ t.test('readdir with provisionals', async t => {
     t.equal(pw.cwd.resolve('A').isFile(), true)
     t.equal(pw.cwd.resolve('A').name, 'a')
 
-    const pw2 = new PathWalker(td, { nocase: false })
+    const pw2 = new PathScurry(td, { nocase: false })
     t.equal(pw2.resolve('A'), resolve(td, 'A'))
     t.not(pw2.resolve('A'), pw2.resolve('a'))
     t.equal(pw2.cwd.resolve('a').isUnknown(), true)
@@ -457,7 +457,7 @@ t.test('readdir with provisionals', async t => {
   })
 
   t.test('two provisional', async t => {
-    const pw = new PathWalker(td)
+    const pw = new PathScurry(td)
     t.equal(pw.resolve('a'), resolve(td, 'a'))
     t.equal(pw.cwd.resolve('a').isUnknown(), true)
     t.equal(pw.cwd.resolve('a').isFile(), false)
@@ -470,7 +470,7 @@ t.test('readdir with provisionals', async t => {
     )
     t.equal(pw.cwd.resolve('b').isUnknown(), false)
     t.equal(pw.cwd.resolve('b').isFile(), true)
-    const pw2 = new PathWalker(td)
+    const pw2 = new PathScurry(td)
     t.equal(pw2.resolve('a'), resolve(td, 'a'))
     t.equal(pw2.cwd.resolve('a').isUnknown(), true)
     t.equal(pw2.cwd.resolve('a').isFile(), false)
@@ -494,7 +494,7 @@ t.test('readdir with provisionals', async t => {
   })
 
   t.test('four provisional', async t => {
-    const pw = new PathWalker(td)
+    const pw = new PathScurry(td)
     // do this one in a different order, since some filesystems return sorted
     // readdir() results.
     t.equal(pw.resolve('d'), resolve(td, 'd'))
@@ -522,7 +522,7 @@ t.test('readdir with provisionals', async t => {
       provisional: 4,
     })
 
-    const pw2 = new PathWalker(td)
+    const pw2 = new PathScurry(td)
     t.equal(pw2.resolve('d'), resolve(td, 'd'))
     t.equal(pw2.cwd.resolve('d').isUnknown(), true)
     t.equal(pw2.cwd.resolve('d').isFile(), false)
@@ -554,7 +554,7 @@ t.test('readdir with provisionals', async t => {
   t.test('get children, then fail readdir', async t => {
     t.test('sync', async t => {
       // give this one not nocase to test the promotion comparison branch
-      const pw = new PathWalker(t.testdir({ dir: { a: '', b: '' } }), {
+      const pw = new PathScurry(t.testdir({ dir: { a: '', b: '' } }), {
         nocase: false,
       })
       pw.resolve('dir', 'a/b')
@@ -572,7 +572,7 @@ t.test('readdir with provisionals', async t => {
     })
     t.test('async', async t => {
       // give this one nocase to test the promotion comparison branch
-      const pw = new PathWalker(t.testdir({ dir: { a: '', b: '' } }), {
+      const pw = new PathScurry(t.testdir({ dir: { a: '', b: '' } }), {
         nocase: true,
       })
       pw.resolve('dir', 'a/B')
@@ -596,7 +596,7 @@ t.test('readdir with provisionals', async t => {
       b: { c: '' },
       d: { e: '' },
     })
-    const pw = new PathWalker(td)
+    const pw = new PathScurry(td)
     t.equal(pw.lstatSync('b/c')?.isFile(), true)
     rimrafSync(td + '/b')
     t.same(
@@ -617,7 +617,7 @@ t.test('readdir with provisionals', async t => {
 
   t.test('known dir, then delete it, then read it', async t => {
     const td = t.testdir({ a: { b: '' } })
-    const pw = new PathWalker(td)
+    const pw = new PathScurry(td)
     t.equal(pw.lstatSync('a')?.isDirectory(), true)
     t.equal(pw.lstatSync('a/b')?.isFile(), true)
     t.equal(pw.cwd.resolve('a').isDirectory(), true)
@@ -726,12 +726,12 @@ t.test('all the IFMTs!', async t => {
     promises: mockFsPromises,
   }
 
-  const { PathWalker } = t.mock('../', {
+  const { PathScurry } = t.mock('../', {
     fs: mockFs,
     'fs/promises': mockFsPromises,
   })
 
-  const pw = new PathWalker(td)
+  const pw = new PathScurry(td)
   t.equal(pw.cwd.resolve('noent').canReaddir(), true)
   t.equal(pw.cwd.resolve('file').lstatSync()?.canReaddir(), false)
   const entries = pw.readdirSync()
@@ -779,8 +779,8 @@ t.test('weird readdir failure', async t => {
       throw Object.assign(new Error('wat'), { code: 'wat' })
     },
   }
-  const { PathWalker } = t.mock('../', { fs: mockFs })
-  const pw = new PathWalker(t.testdir({ a: '' }))
+  const { PathScurry } = t.mock('../', { fs: mockFs })
+  const pw = new PathScurry(t.testdir({ a: '' }))
   const a = pw.cwd.resolve('a').lstatSync()
   t.equal(a.isFile(), true)
   t.same(pw.readdirSync(), [])
@@ -867,7 +867,7 @@ t.test('eloop', async t => {
   let syncResults: { [k: string]: string | undefined } = {}
   let asyncResults: { [k: string]: string | undefined } = {}
   t.test('sync', t => {
-    const pw = new PathWalker(td)
+    const pw = new PathScurry(td)
     // readlink on a noent is
     for (const p of paths) {
       syncResults[p] = pw.realpathSync(p)
@@ -884,7 +884,7 @@ t.test('eloop', async t => {
     t.end()
   })
   t.test('async', async t => {
-    const pw = new PathWalker(td)
+    const pw = new PathScurry(td)
     for (const p of paths) {
       asyncResults[p] = await pw.realpath(p)
     }
@@ -900,7 +900,7 @@ t.test('eloop', async t => {
 
   t.test('walk this beast', async t => {
     const entries: string[] = []
-    for await (const entry of new PathWalker(td)) {
+    for await (const entry of new PathScurry(td)) {
       entries.push(entry.fullpath())
     }
     t.matchSnapshot(entries.sort((a, b) => a.localeCompare(b, 'en')))
@@ -954,7 +954,7 @@ t.test('walking', async t => {
             `walkFilter=${!!walkFilter}`,
           ].join(', ')
           t.test(name, async t => {
-            let pw = new PathWalker(td)
+            let pw = new PathScurry(td)
             // if not following, then just take the default args when we
             // walk to get the entries, to cover that code path.
             const syncWalk = opts ? pw.walkSync('', opts) : pw.walkSync()
@@ -972,7 +972,7 @@ t.test('walking', async t => {
 
             const withFileTypes = false
             t.test('second walkSync, strings', async t => {
-              if (!reuse) pw = new PathWalker(td)
+              if (!reuse) pw = new PathScurry(td)
               const found = new Set<string>()
               for (const path of pw.walkSync('', {
                 ...(opts || {}),
@@ -984,7 +984,7 @@ t.test('walking', async t => {
             })
 
             t.test('async walk, objects', async t => {
-              if (!reuse) pw = new PathWalker(td)
+              if (!reuse) pw = new PathScurry(td)
               const w = opts ? pw.walk('', opts) : pw.walk()
               const found = new Set<Path>()
               for (const path of await w) {
@@ -998,7 +998,7 @@ t.test('walking', async t => {
 
             t.test('async walk, strings', async t => {
               const found = new Set<string>()
-              if (!reuse) pw = new PathWalker(td)
+              if (!reuse) pw = new PathScurry(td)
               for (const path of await pw.walk('', {
                 ...(opts || {}),
                 withFileTypes,
@@ -1014,7 +1014,7 @@ t.test('walking', async t => {
             if (!opts) {
               // default iterators never follow, filter, etc.
               t.test('for [await] of', async t => {
-                if (!reuse) pw = new PathWalker(td)
+                if (!reuse) pw = new PathScurry(td)
                 const found = new Set<Path>()
                 for (const path of pw) {
                   found.add(path)
@@ -1024,7 +1024,7 @@ t.test('walking', async t => {
                 }
                 t.same(found, entries)
 
-                if (!reuse) pw = new PathWalker(td)
+                if (!reuse) pw = new PathScurry(td)
                 const found2 = new Set<Path>()
                 for await (const path of pw) {
                   found2.add(path)
@@ -1037,7 +1037,7 @@ t.test('walking', async t => {
             }
 
             t.test('iterateSync', async t => {
-              if (!reuse) pw = new PathWalker(td)
+              if (!reuse) pw = new PathScurry(td)
               const f = opts ? pw.iterateSync('', opts) : pw.iterateSync()
               const found = new Set<Path>()
               for (const path of f) {
@@ -1049,7 +1049,7 @@ t.test('walking', async t => {
               t.same(found, entries)
             })
             t.test('iterateSync strings', async t => {
-              if (!reuse) pw = new PathWalker(td)
+              if (!reuse) pw = new PathScurry(td)
               const found = new Set<string>()
               for (const path of pw.iterateSync('', {
                 ...(opts || {}),
@@ -1064,7 +1064,7 @@ t.test('walking', async t => {
             })
 
             t.test('async iterate', async t => {
-              if (!reuse) pw = new PathWalker(td)
+              if (!reuse) pw = new PathScurry(td)
               const f = opts ? pw.iterate('', opts) : pw.iterate()
               let found = new Set<Path>()
               for await (const path of f) {
@@ -1077,7 +1077,7 @@ t.test('walking', async t => {
             })
 
             t.test('async iterate strings', async t => {
-              if (!reuse) pw = new PathWalker(td)
+              if (!reuse) pw = new PathScurry(td)
               const found = new Set<string>()
               for await (const path of pw.iterate('', {
                 ...(opts || {}),
@@ -1095,7 +1095,7 @@ t.test('walking', async t => {
             })
 
             t.test('stream', async t => {
-              if (!reuse) pw = new PathWalker(td)
+              if (!reuse) pw = new PathScurry(td)
               const found = new Set<Path>()
               const stream = !opts ? pw.stream() : pw.stream('', opts)
               stream.on('data', path => {
@@ -1109,7 +1109,7 @@ t.test('walking', async t => {
             })
 
             t.test('stream, strings', async t => {
-              if (!reuse) pw = new PathWalker(td)
+              if (!reuse) pw = new PathScurry(td)
               const found = new Set<string>()
               const stream = pw.stream('', {
                 ...(opts || {}),
@@ -1126,7 +1126,7 @@ t.test('walking', async t => {
             })
 
             t.test('streamSync', async t => {
-              if (!reuse) pw = new PathWalker(td)
+              if (!reuse) pw = new PathScurry(td)
               const found = new Set<Path>()
               const stream = !opts
                 ? pw.streamSync()
@@ -1141,7 +1141,7 @@ t.test('walking', async t => {
             })
 
             t.test('streamSync, strings', async t => {
-              if (!reuse) pw = new PathWalker(td)
+              if (!reuse) pw = new PathScurry(td)
               const found = new Set<string>()
               const stream = pw.streamSync('', {
                 ...(opts || {}),
@@ -1169,7 +1169,7 @@ t.test('cached methods', t => {
     },
     link: t.fixture('symlink', 'dir/file'),
   })
-  const pw = new PathWalker(td)
+  const pw = new PathScurry(td)
   const dir = pw.cwd.resolve('dir')
   const file = pw.cwd.resolve('dir/file')
   const noent = pw.cwd.resolve('dir/nope')

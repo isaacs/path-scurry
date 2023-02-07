@@ -1,4 +1,4 @@
-# path-walker
+# path-scurry
 
 Extremely high performant utility for building tools that read
 the file system, minimizing filesystem and path string munging
@@ -43,7 +43,7 @@ JavaScript people throw around the word "blazing" a lot. I hope
 that this module doesn't blaze anyone. But it does go very fast,
 in the cases it's optimized for, if used properly.
 
-PathWalker provides ample opportunities to get extremely good
+PathScurry provides ample opportunities to get extremely good
 performance, as well as several options to trade performance for
 convenience.
 
@@ -53,19 +53,19 @@ As is always the case, doing more means going slower, doing
 less means going faster, and there are trade offs between speed
 and memory usage.
 
-PathWalker makes heavy use of [LRUCache](http://npm.im/lru-cache)
+PathScurry makes heavy use of [LRUCache](http://npm.im/lru-cache)
 to efficiently cache whatever it can, and `Path` objects remain
 in the graph for the lifetime of the walker, so repeated calls
-with a single PathWalker object will be extremely fast. However,
+with a single PathScurry object will be extremely fast. However,
 adding items to a cold cache means "doing more", so in those
 cases. Nothing is free, but every effort has been made to reduce
 costs wherever possible.
 
 Also, note that a "cache as long as possible" approach means that
 changes to the filesystem may not be reflected in the results of
-repeated PathWalker operations.
+repeated PathScurry operations.
 
-For resolving string paths, `PathWalker` ranges from
+For resolving string paths, `PathScurry` ranges from
 5-50 times faster than `path.resolve` on repeated resolutions,
 but around 100 to 1000 times _slower_ on the first resolution.
 If your program is spending a lot of time resolving the _same_
@@ -75,19 +75,19 @@ second to 40M operations per second is not going to move the
 needle.
 
 For walking file system paths, again a lot depends on how often a
-given PathWalker object will be used, but also the walk method
+given PathScurry object will be used, but also the walk method
 used.
 
 With default settings on a folder tree of 100,000 items,
 consisting of around a 10-to-1 ratio of normal files to
-directories, PathWalker performs comparably to
+directories, PathScurry performs comparably to
 [@nodelib/fs.walk](http://npm.im/@nodelib/fs.walk), which is the
 fastest and most reliable file system walker I could find. On my
 machine, that is about 1000-1200 completed walks per second for
 async or stream walks, and around 500-600 walks per second
 synchronously.
 
-In the warm cache state, PathWalker's performance increases
+In the warm cache state, PathScurry's performance increases
 around 4x for async `for await` iteration, 10-15x faster for
 streams and synchronous `for of` iteration, and anywhere from 30x
 to 80x faster for the rest.
@@ -95,7 +95,7 @@ to 80x faster for the rest.
 ```
 # walk 100,000 fs entries, 10/1 file/dir ratio
 # operations / ms
- New PathWalker object  |  Reuse PathWalker object
+ New PathScurry object  |  Reuse PathScurry object
      stream:  1112.589  |  13974.917
 sync stream:   492.718  |  15028.343
  async walk:  1095.648  |  32706.395
@@ -131,16 +131,16 @@ synchronous iteration.
 
 If you can think of a case that is not covered in these
 benchmarks, or an implementation that performs significantly
-better than PathWalker, please [let me
+better than PathScurry, please [let me
 know](https://github.com/isaacs/path-walker/issues).
 
 ## USAGE
 
 ```ts
 // hybrid module, load with either method
-import { PathWalker, Path } from 'path-walker'
+import { PathScurry, Path } from 'path-walker'
 // or:
-const { PathWalker, Path } = require('path-walker')
+const { PathScurry, Path } = require('path-walker')
 
 // very simple example, say we want to find and
 // delete all the .DS_Store files in a given path
@@ -149,7 +149,7 @@ const { PathWalker, Path } = require('path-walker')
 import { unlink } from 'fs/promises'
 
 // easy way, iterate over the directory and do the thing
-const pw = new PathWalker(process.cwd())
+const pw = new PathScurry(process.cwd())
 for await (const entry of pw) {
   if (entry.isFile() && entry.name === '.DS_Store') {
     unlink(entry.fullpath())
@@ -180,7 +180,7 @@ walk(pw.cwd).then(() => {
   console.log('all .DS_Store files removed')
 })
 
-const pw2 = new PathWalker('/a/b/c') // pw2.cwd is the Path for /a/b/c
+const pw2 = new PathScurry('/a/b/c') // pw2.cwd is the Path for /a/b/c
 const relativeDir = pw2.cwd.resolve('../x') // Path entry for '/a/b/x'
 const relative2 = pw2.cwd.resolve('/a/b/d/../x') // same path, same entry
 assert.equal(relativeDir, relative2)
@@ -191,7 +191,7 @@ assert.equal(relativeDir, relative2)
 [Full TypeDoc API](https://isaacs.github.io/path-walker)
 
 There are platform-specific classes exported, but for the most
-part, the default `PathWalker` and `Path` exports are what you
+part, the default `PathScurry` and `Path` exports are what you
 most likely need, unless you are testing behavior for other
 platforms.
 
@@ -199,9 +199,9 @@ Intended public API is documented here, but the full
 documentation does include internal types, which should not be
 accessed directly.
 
-### Interface `PathWalkerOpts`
+### Interface `PathScurryOpts`
 
-The type of the `options` argument passed to the `PathWalker`
+The type of the `options` argument passed to the `PathScurry`
 constructor.
 
 - `nocase`: Boolean indicating that file names should be compared
@@ -262,12 +262,12 @@ Note that TypeScript return types will only be inferred properly
 from static analysis if the `withFileTypes` option is omitted, or
 a constant `true` or `false` value.
 
-### Class `PathWalker`
+### Class `PathScurry`
 
 The main interface. Defaults to an appropriate class based on
 the current platform.
 
-Use `PathWalkerWin32`, `PathWalkerDarwin`, or `PathWalkerPosix`
+Use `PathScurryWin32`, `PathScurryDarwin`, or `PathScurryPosix`
 if implementation-specific behavior is desired.
 
 #### `async pw.walk(entry?: string | Path, opts?: WalkOptions)`
@@ -306,7 +306,7 @@ single tick if the stream is fully consumed.
 #### `pw.cwd`
 
 Path object representing the current working directory for the
-PathWalker.
+PathScurry.
 
 #### `pw.resolve(...paths: string[])`
 
@@ -316,7 +316,7 @@ Significantly faster than `path.resolve()` if called repeatedly
 with the same paths. Significantly slower otherwise, as it
 builds out the cached Path entries.
 
-To get a `Path` object resolved from the `PathWalker`, use
+To get a `Path` object resolved from the `PathScurry`, use
 `pw.cwd.resolve(path)`. Note that `Path.resolve` only takes a
 single string argument, not multiple.
 
@@ -385,7 +385,7 @@ Object representing a given path on the filesystem, which may or
 may not exist.
 
 Note that the actual class in use will be either `PathWin32` or
-`PathPosix`, depending on the implementation of `PathWalker` in
+`PathPosix`, depending on the implementation of `PathScurry` in
 use. They differ in the separators used to split and join path
 strings, and the handling of root paths.
 

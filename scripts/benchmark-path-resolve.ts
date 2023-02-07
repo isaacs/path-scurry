@@ -4,7 +4,7 @@ console.log('Testing performance compared with path.resolve()')
 
 // Test performance against the built-in path.resolve()
 //
-// Since PathWalker is optimized for cases where the *same*
+// Since PathScurry is optimized for cases where the *same*
 // paths potentially get resolved repeatedly (as in a glob
 // walk, or other cases where the paths being resolved refer
 // to real file system entries), note that the ${RANDOM} case
@@ -23,12 +23,12 @@ console.log('Testing performance compared with path.resolve()')
 // path resolution process, in which case, don't do that lol.
 
 import { posix } from 'path'
-import { PathBase, PathWalkerPosix, PathWalkerWin32 } from '../'
+import { PathBase, PathScurryPosix, PathScurryWin32 } from '../'
 const posixResolve = posix.resolve
 const win32Resolve = posix.resolve
 
-const pwp = new PathWalkerPosix(process.cwd(), { nocase: false })
-const pww = new PathWalkerWin32(process.cwd(), { nocase: false })
+const pwp = new PathScurryPosix(process.cwd(), { nocase: false })
+const pww = new PathScurryWin32(process.cwd(), { nocase: false })
 
 const N = 1_000
 const p = 'a/b/c/../d/e/f////g/h/i/j/../j/k'
@@ -120,7 +120,7 @@ for (const [s, t] of cases) {
   console.log(`\r(${s}${t ? ',' + t : ''})`, {
     'path.win32.resolve()': format(prwin),
     'path.posix.resolve()': format(prnix),
-    PathWalkerPosix: format(pwp),
-    PathWalkerWin32: format(pww),
+    PathScurryPosix: format(pwp),
+    PathScurryWin32: format(pww),
   })
 }

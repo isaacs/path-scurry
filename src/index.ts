@@ -148,7 +148,7 @@ export abstract class PathBase implements Dirent {
    */
   root: PathBase
   /**
-   * All roots found within the current PathWalker family
+   * All roots found within the current PathScurry family
    *
    * @internal
    */
@@ -184,7 +184,7 @@ export abstract class PathBase implements Dirent {
 
   /**
    * Do not create new Path objects directly.  They should always be accessed
-   * via the PathWalker class or other methods on the Path class.
+   * via the PathScurry class or other methods on the Path class.
    *
    * @internal
    */
@@ -911,7 +911,7 @@ export class PathWin32 extends PathBase {
 
   /**
    * Do not create new Path objects directly.  They should always be accessed
-   * via the PathWalker class or other methods on the Path class.
+   * via the PathScurry class or other methods on the Path class.
    *
    * @internal
    */
@@ -964,7 +964,7 @@ export class PathWin32 extends PathBase {
       }
     }
     // otherwise, have to create a new one.
-    return (this.roots[rootPath] = new PathWalkerWin32(
+    return (this.roots[rootPath] = new PathScurryWin32(
       rootPath,
       this
     ).root)
@@ -1002,7 +1002,7 @@ export class PathPosix extends PathBase {
 
   /**
    * Do not create new Path objects directly.  They should always be accessed
-   * via the PathWalker class or other methods on the Path class.
+   * via the PathScurry class or other methods on the Path class.
    *
    * @internal
    */
@@ -1049,9 +1049,9 @@ export class PathPosix extends PathBase {
 }
 
 /**
- * Options that may be provided to the PathWalker constructor
+ * Options that may be provided to the PathScurry constructor
  */
-export interface PathWalkerOpts {
+export interface PathScurryOpts {
   /**
    * perform case-insensitive path matching. Default based on platform
    * subclass.
@@ -1061,7 +1061,7 @@ export interface PathWalkerOpts {
    * Number of Path entries to keep in the cache of Path child references.
    *
    * Setting this higher than 65536 will dramatically increase the data
-   * consumption and construction time overhead of each PathWalker.
+   * consumption and construction time overhead of each PathScurry.
    *
    * Setting this value to 256 or lower will significantly reduce the data
    * consumption and construction time overhead, but may also reduce resolve()
@@ -1073,20 +1073,20 @@ export interface PathWalkerOpts {
 }
 
 /**
- * The base class for all PathWalker classes, providing the interface for path
+ * The base class for all PathScurry classes, providing the interface for path
  * resolution and filesystem operations.
  *
  * Typically, you should *not* instantiate this class directly, but rather one
- * of the platform-specific classes, or the exported {@link PathWalker} which
+ * of the platform-specific classes, or the exported {@link PathScurry} which
  * defaults to the current platform.
  */
-export abstract class PathWalkerBase {
+export abstract class PathScurryBase {
   /**
-   * The root Path entry for the current working directory of this walker
+   * The root Path entry for the current working directory of this Scurry
    */
   root: PathBase
   /**
-   * The string path for the root of this walker's current working directory
+   * The string path for the root of this Scurry's current working directory
    */
   rootPath: string
   /**
@@ -1094,7 +1094,7 @@ export abstract class PathWalkerBase {
    */
   roots: { [k: string]: PathBase }
   /**
-   * The Path entry corresponding to this PathWalker's current working directory.
+   * The Path entry corresponding to this PathScurry's current working directory.
    */
   cwd: PathBase
   #resolveCache: ResolveCache
@@ -1116,7 +1116,7 @@ export abstract class PathWalkerBase {
   /**
    * This class should not be instantiated directly.
    *
-   * Use PathWalkerWin32, PathWalkerDarwin, PathWalkerPosix, or PathWalker
+   * Use PathScurryWin32, PathScurryDarwin, PathScurryPosix, or PathScurry
    *
    * @internal
    */
@@ -1124,7 +1124,7 @@ export abstract class PathWalkerBase {
     cwd: string = process.cwd(),
     pathImpl: typeof win32 | typeof posix,
     sep: string | RegExp,
-    { nocase, childrenCacheSize = 16 * 1024 }: PathWalkerOpts = {}
+    { nocase, childrenCacheSize = 16 * 1024 }: PathScurryOpts = {}
   ) {
     // resolve and split root, and then add to the store.
     // this is the only time we call path.resolve()
@@ -1142,7 +1142,7 @@ export abstract class PathWalkerBase {
     /* c8 ignore start */
     if (nocase === undefined) {
       throw new TypeError(
-        'must provide nocase setting to PathWalkerBase ctor'
+        'must provide nocase setting to PathScurryBase ctor'
       )
     }
     /* c8 ignore stop */
@@ -1277,7 +1277,7 @@ export abstract class PathWalkerBase {
   }
 
   /**
-   * synchronous {@link PathWalkerBase.readdir}
+   * synchronous {@link PathScurryBase.readdir}
    */
   readdirSync(
     entry?: PathBase | string,
@@ -1334,7 +1334,7 @@ export abstract class PathWalkerBase {
   }
 
   /**
-   * synchronous {@link PathWalkerBase.lstat}
+   * synchronous {@link PathScurryBase.lstat}
    */
   lstatSync(entry: string | PathBase = this.cwd): PathBase | undefined {
     if (typeof entry === 'string') {
@@ -1383,7 +1383,7 @@ export abstract class PathWalkerBase {
   }
 
   /**
-   * synchronous {@link PathWalkerBase.readlink}
+   * synchronous {@link PathScurryBase.readlink}
    */
   readlinkSync(
     entry: string | PathBase,
@@ -1621,23 +1621,23 @@ export abstract class PathWalkerBase {
   /**
    * Support for `for await`
    *
-   * Alias for {@link PathWalkerBase.iterate}
+   * Alias for {@link PathScurryBase.iterate}
    *
    * Note: As of Node 19, this is very slow, compared to other methods of
-   * walking.  Consider using {@link PathWalkerBase.stream} if memory overhead
-   * and backpressure are concerns, or {@link PathWalkerBase.walk} if not.
+   * walking.  Consider using {@link PathScurryBase.stream} if memory overhead
+   * and backpressure are concerns, or {@link PathScurryBase.walk} if not.
    */
   [Symbol.asyncIterator]() {
     return this.iterate()
   }
 
   /**
-   * Async generator form of {@link PathWalkerBase.walk}
+   * Async generator form of {@link PathScurryBase.walk}
    *
    * Note: As of Node 19, this is very slow, compared to other methods of
    * walking, especially if most/all of the directory tree has been previously
-   * walked.  Consider using {@link PathWalkerBase.stream} if memory overhead
-   * and backpressure are concerns, or {@link PathWalkerBase.walk} if not.
+   * walked.  Consider using {@link PathScurryBase.stream} if memory overhead
+   * and backpressure are concerns, or {@link PathScurryBase.walk} if not.
    */
   iterate(entry?: string | PathBase): AsyncGenerator<PathBase, void, void>
   iterate(
@@ -1663,9 +1663,9 @@ export abstract class PathWalkerBase {
   }
 
   /**
-   * Iterating over a PathWalker performs a synchronous walk.
+   * Iterating over a PathScurry performs a synchronous walk.
    *
-   * Alias for {@link PathWalkerBase.syncIterate}
+   * Alias for {@link PathScurryBase.iterateSync}
    */
   [Symbol.iterator]() {
     return this.iterateSync()
@@ -1719,7 +1719,7 @@ export abstract class PathWalkerBase {
   }
 
   /**
-   * Stream form of {@link PathWalkerBase.walk}
+   * Stream form of {@link PathScurryBase.walk}
    *
    * Returns a Minipass stream that emits {@link PathBase} objects by default,
    * or strings if `{ withFileTypes: false }` is set in the options.
@@ -1830,7 +1830,7 @@ export abstract class PathWalkerBase {
   }
 
   /**
-   * Synchronous form of {@link PathWalkerBase.stream}
+   * Synchronous form of {@link PathScurryBase.stream}
    *
    * Returns a Minipass stream that emits {@link PathBase} objects by default,
    * or strings if `{ withFileTypes: false }` is set in the options.
@@ -1961,30 +1961,30 @@ export interface WalkOptions {
   walkFilter?: (entry: PathBase) => boolean
 }
 
-type WalkOptionsWithFileTypesUnset = Pick<
+export type WalkOptionsWithFileTypesUnset = Pick<
   WalkOptions,
   Exclude<keyof WalkOptions, 'withFileTypes'>
 >
-type WalkOptionsWithFileTypesTrue = WalkOptions & {
+export type WalkOptionsWithFileTypesTrue = WalkOptions & {
   withFileTypes: true
 }
-type WalkOptionsWithFileTypesFalse = WalkOptions & {
+export type WalkOptionsWithFileTypesFalse = WalkOptions & {
   withFileTypes: false
 }
 
 /**
- * Windows implementation of {@link PathWalkerBase}
+ * Windows implementation of {@link PathScurryBase}
  *
  * Defaults to case insensitve, uses `'\\'` to generate path strings.  Uses
  * {@link PathWin32} for Path objects.
  */
-export class PathWalkerWin32 extends PathWalkerBase {
+export class PathScurryWin32 extends PathScurryBase {
   /**
    * separator for generating path strings
    */
   sep: '\\' = '\\'
 
-  constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
+  constructor(cwd: string = process.cwd(), opts: PathScurryOpts = {}) {
     const { nocase = true } = opts
     super(cwd, win32, '\\', { ...opts, nocase })
     this.nocase = nocase
@@ -2029,18 +2029,18 @@ export class PathWalkerWin32 extends PathWalkerBase {
 }
 
 /**
- * {@link PathWalkerBase} implementation for all posix systems other than Darwin.
+ * {@link PathScurryBase} implementation for all posix systems other than Darwin.
  *
  * Defaults to case-sensitive matching, uses `'/'` to generate path strings.
  *
  * Uses {@link PathPosix} for Path objects.
  */
-export class PathWalkerPosix extends PathWalkerBase {
+export class PathScurryPosix extends PathScurryBase {
   /**
    * separator for generating path strings
    */
   sep: '/' = '/'
-  constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
+  constructor(cwd: string = process.cwd(), opts: PathScurryOpts = {}) {
     const { nocase = false } = opts
     super(cwd, posix, '/', { ...opts, nocase })
     this.nocase = nocase
@@ -2077,15 +2077,15 @@ export class PathWalkerPosix extends PathWalkerBase {
 }
 
 /**
- * {@link PathWalkerBase} implementation for Darwin (macOS) systems.
+ * {@link PathScurryBase} implementation for Darwin (macOS) systems.
  *
  * Defaults to case-insensitive matching, uses `'/'` for generating path
  * strings.
  *
  * Uses {@link PathPosix} for Path objects.
  */
-export class PathWalkerDarwin extends PathWalkerPosix {
-  constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
+export class PathScurryDarwin extends PathScurryPosix {
+  constructor(cwd: string = process.cwd(), opts: PathScurryOpts = {}) {
     const { nocase = true } = opts
     super(cwd, { ...opts, nocase })
   }
@@ -2100,18 +2100,18 @@ export const Path = process.platform === 'win32' ? PathWin32 : PathPosix
 export type Path = PathBase | InstanceType<typeof Path>
 
 /**
- * Default {@link PathWalkerBase} implementation for the current platform.
+ * Default {@link PathScurryBase} implementation for the current platform.
  *
- * {@link PathWalkerWin32} on Windows systems, {@link PathWalkerDarwin} on
- * Darwin (macOS) systems, {@link PathWalkerPosix} on all others.
+ * {@link PathScurryWin32} on Windows systems, {@link PathScurryDarwin} on
+ * Darwin (macOS) systems, {@link PathScurryPosix} on all others.
  */
-export const PathWalker:
-  | typeof PathWalkerWin32
-  | typeof PathWalkerDarwin
-  | typeof PathWalkerPosix =
+export const PathScurry:
+  | typeof PathScurryWin32
+  | typeof PathScurryDarwin
+  | typeof PathScurryPosix =
   process.platform === 'win32'
-    ? PathWalkerWin32
+    ? PathScurryWin32
     : process.platform === 'darwin'
-    ? PathWalkerDarwin
-    : PathWalkerPosix
-export type PathWalker = PathWalkerBase | InstanceType<typeof PathWalker>
+    ? PathScurryDarwin
+    : PathScurryPosix
+export type PathScurry = PathScurryBase | InstanceType<typeof PathScurry>
