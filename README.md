@@ -32,6 +32,10 @@ folder tree, such that:
    _doesn't_ know, and go get it seamlessly when requested.
 6. Do not blow up the JS heap allocation if operating on a
    directory with a huge number of entries.
+7. Handle all the weird aspects of Windows paths, like UNC paths
+   and drive letters and wrongway slashes, so that the consumer
+   can return canonical platform-specific paths without having to
+   parse or join or do any error-prone string munging.
 
 ## PERFORMANCE
 

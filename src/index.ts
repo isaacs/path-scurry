@@ -401,6 +401,9 @@ export abstract class PathBase implements Dirent {
   /**
    * Return the entry if it has been subject of a successful lstat, or
    * undefined otherwise.
+   *
+   * Does not read the filesystem, so an undefined result *could* simply
+   * mean that we haven't called lstat on it.
    */
   lstatCached(): PathBase | undefined {
     return this.#type & LSTAT_CALLED ? this : undefined
@@ -409,6 +412,10 @@ export abstract class PathBase implements Dirent {
   /**
    * Return the cached link target if the entry has been the subject of a
    * successful readlink, or undefined otherwise.
+   *
+   * Does not read the filesystem, so an undefined result *could* just mean we
+   * don't have any cached data. Only use it if you are very sure that a
+   * readlink() has been called at some point.
    */
   readlinkCached(): PathBase | undefined {
     return this.#linkTarget
@@ -417,6 +424,10 @@ export abstract class PathBase implements Dirent {
   /**
    * Returns the cached realpath target if the entry has been the subject
    * of a successful realpath, or undefined otherwise.
+   *
+   * Does not read the filesystem, so an undefined result *could* just mean we
+   * don't have any cached data. Only use it if you are very sure that a
+   * realpath() has been called at some point.
    */
   realpathCached(): PathBase | undefined {
     return this.#realpath
@@ -425,6 +436,10 @@ export abstract class PathBase implements Dirent {
   /**
    * Returns the cached child Path entries array if the entry has been the
    * subject of a successful readdir(), or [] otherwise.
+   *
+   * Does not read the filesystem, so an empty array *could* just mean we
+   * don't have any cached data. Only use it if you are very sure that a
+   * readdir() has been called recently enough to still be valid.
    */
   readdirCached(): PathBase[] {
     const children = this.children()
