@@ -65,26 +65,30 @@ Also, note that a "cache as long as possible" approach means that
 changes to the filesystem may not be reflected in the results of
 repeated PathScurry operations.
 
-For resolving string paths, `PathScurry` ranges from
-5-50 times faster than `path.resolve` on repeated resolutions,
-but around 100 to 1000 times _slower_ on the first resolution.
-If your program is spending a lot of time resolving the _same_
-paths repeatedly, then this can be beneficial. But `path.resolve`
-is pretty fast, and improving performance frlm 4M operations per
-second to 40M operations per second is not going to move the
-needle.
+For resolving string paths, `PathScurry` ranges from 5-50 times
+faster than `path.resolve` on repeated resolutions, but around
+100 to 1000 times _slower_ on the first resolution. If your
+program is spending a lot of time resolving the _same_ paths
+repeatedly (like, thousands or millions of times), then this can
+be beneficial. But both implementations are pretty fast, and
+improving speeding up an infrequent operation from 4µs to 400ns
+is not going to move the needle on your app's performance.
 
-For walking file system paths, again a lot depends on how often a
-given PathScurry object will be used, but also the walk method
-used.
+For walking file system directory trees, a lot depends on how
+often a given PathScurry object will be used, and also on the
+walk method used.
 
 With default settings on a folder tree of 100,000 items,
 consisting of around a 10-to-1 ratio of normal files to
 directories, PathScurry performs comparably to
 [@nodelib/fs.walk](http://npm.im/@nodelib/fs.walk), which is the
-fastest and most reliable file system walker I could find. On my
-machine, that is about 1000-1200 completed walks per second for
-async or stream walks, and around 500-600 walks per second
+fastest and most reliable file system walker I could find.  As
+far as I can tell, it's almost impossible to go much faster in a
+Node.js program, just based on how fast you can push syscalls out
+to the fs thread pool.
+
+On my machine, that is about 1000-1200 completed walks per second
+for async or stream walks, and around 500-600 walks per second
 synchronously.
 
 In the warm cache state, PathScurry's performance increases
@@ -107,12 +111,14 @@ sync stream:   492.718  |  15028.343
 A hand-rolled walk calling `entry.readdir()` and recursing
 through the entries can benefit even more from caching, with
 greater flexibility and without the overhead of streams or
-generators. The cold cache state is still limited by the costs
-of file system operations, but with a warm cache, the only
-bottleneck is CPU speed and VM optimizations. Of course, in that
-case, some care must be taken to ensure that you don't lose
-performance as a result of silly mistakes, like calling
-`readdir()` on entries that you know are not directories.
+generators.
+
+The cold cache state is still limited by the costs of file system
+operations, but with a warm cache, the only bottleneck is CPU
+speed and VM optimizations. Of course, in that case, some care
+must be taken to ensure that you don't lose performance as a
+result of silly mistakes, like calling `readdir()` on entries
+that you know are not directories.
 
 ```
 # manual recursive iteration functions
