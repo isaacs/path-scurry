@@ -6,8 +6,9 @@ import {
   readdir as readdirCB,
   readdirSync,
   readlinkSync,
-  realpathSync,
+  realpathSync as rps,
 } from 'fs'
+const realpathSync = rps.native
 // TODO: test perf of fs/promises realpath vs realpathCB,
 // since the promises one uses realpath.native
 import { lstat, readdir, readlink, realpath } from 'fs/promises'
@@ -745,16 +746,6 @@ export abstract class PathBase implements Dirent {
       return children.slice(0, children.provisional)
     }
 
-    const target = this.isSymbolicLink()
-      ? this.#linkTarget || (await this.realpath())
-      : this
-    if (!target) {
-      this.#readdirFail('ENOTDIR')
-      return []
-    } else if (target !== this) {
-      return target.readdir()
-    }
-
     // else read the directory, fill up children
     // de-provisionalize any provisional children.
     const fullpath = this.fullpath()
@@ -783,18 +774,6 @@ export abstract class PathBase implements Dirent {
       return children.slice(0, children.provisional)
     }
 
-    // readlinks read the dir target, but we need to attach children
-    // there, not here, or else walks get *super* weird.
-    const target = this.isSymbolicLink()
-      ? this.#realpath || this.realpathSync()
-      : this
-    if (!target) {
-      this.#readdirFail('ENOTDIR')
-      return []
-    } else if (target !== this) {
-      return target.readdirSync()
-    }
-
     // else read the directory, fill up children
     // de-provisionalize any provisional children.
     const fullpath = this.fullpath()
@@ -820,13 +799,11 @@ export abstract class PathBase implements Dirent {
   shouldWalk(
     dirs: Set<PathBase | undefined>,
     walkFilter?: (e: PathBase) => boolean
-  ): PathBase | false {
+  ): boolean {
     return (this.#type & IFDIR) === IFDIR &&
       !(this.#type & ENOCHILD) &&
       !dirs.has(this) &&
       (!walkFilter || walkFilter(this))
-      ? this.#linkTarget || this
-      : false
   }
 
   /**
@@ -1504,13 +1481,11 @@ export abstract class PathWalkerBase {
             results.push(withFileTypes ? e : e.fullpath())
           }
           if (follow && e.isSymbolicLink()) {
-            e.realpath().then(r => {
-              if (r?.shouldWalk(dirs, walkFilter)) {
-                walk(r, next)
-              } else {
-                next()
-              }
-            })
+            e.realpath()
+              .then(r => (r?.isUnknown() ? r.lstat() : r))
+              .then(r =>
+                r?.shouldWalk(dirs, walkFilter) ? walk(r, next) : next()
+              )
           } else {
             if (e.shouldWalk(dirs, walkFilter)) {
               walk(e, next)
@@ -1580,6 +1555,7 @@ export abstract class PathWalkerBase {
         let r: PathBase | undefined = e
         if (e.isSymbolicLink()) {
           if (!(follow && (r = e.realpathSync()))) continue
+          if (r.isUnknown()) r.lstatSync()
         }
         if (r.shouldWalk(dirs, walkFilter)) {
           dirs.add(r)
@@ -1680,6 +1656,7 @@ export abstract class PathWalkerBase {
         let r: PathBase | undefined = e
         if (e.isSymbolicLink()) {
           if (!(follow && (r = e.realpathSync()))) continue
+          if (r.isUnknown()) r.lstatSync()
         }
         if (r.shouldWalk(dirs, walkFilter)) {
           dirs.add(r)
@@ -1741,16 +1718,22 @@ export abstract class PathWalkerBase {
         const onReaddir = (
           er: null | NodeJS.ErrnoException,
           entries: PathBase[],
-          didReadlinks: boolean = false
+          didRealpaths: boolean = false
         ) => {
           /* c8 ignore start */
           if (er) return results.emit('error', er)
           /* c8 ignore stop */
-          if (follow && !didReadlinks) {
+          if (follow && !didRealpaths) {
             const promises: Promise<PathBase | undefined>[] = []
             for (const e of entries) {
               if (e.isSymbolicLink()) {
-                promises.push(e.realpath())
+                promises.push(
+                  e
+                    .realpath()
+                    .then((r: PathBase | undefined) =>
+                      r?.isUnknown() ? r.lstat() : r
+                    )
+                )
               }
             }
             if (promises.length) {
@@ -1776,8 +1759,11 @@ export abstract class PathWalkerBase {
               queue.push(r)
             }
           }
-          if (paused) results.once('drain', process)
-          else if (!sync) process()
+          if (paused && !results.flowing) {
+            results.once('drain', process)
+          } else if (!sync) {
+            process()
+          }
         }
 
         // zalgo containment
@@ -1855,13 +1841,14 @@ export abstract class PathWalkerBase {
           let r: PathBase | undefined = e
           if (e.isSymbolicLink()) {
             if (!(follow && (r = e.realpathSync()))) continue
+            if (r.isUnknown()) r.lstatSync()
           }
           if (r.shouldWalk(dirs, walkFilter)) {
             queue.push(r)
           }
         }
       }
-      if (paused) results.once('drain', process)
+      if (paused && !results.flowing) results.once('drain', process)
     }
     process()
     return results as Minipass<string> | Minipass<PathBase>

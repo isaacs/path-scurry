@@ -85,10 +85,10 @@ Array [
 ]
 `
 
-exports[`test/index.ts TAP walking basic walks, follow=false, reuse=false initial walk, sync > must match snapshot 1`] = `
+exports[`test/index.ts TAP walking follow=false, filter=false, walkFilter=false initial walk, sync > must match snapshot 1`] = `
 Set {
-  "{CWD}/test/tap-testdir-index-walking",
   "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
@@ -105,10 +105,10 @@ Set {
 }
 `
 
-exports[`test/index.ts TAP walking basic walks, follow=false, reuse=true initial walk, sync > must match snapshot 1`] = `
+exports[`test/index.ts TAP walking follow=false, filter=false, walkFilter=false initial walk, sync > must match snapshot 2`] = `
 Set {
-  "{CWD}/test/tap-testdir-index-walking",
   "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
@@ -125,10 +125,218 @@ Set {
 }
 `
 
-exports[`test/index.ts TAP walking basic walks, follow=true, reuse=false initial walk, sync > must match snapshot 1`] = `
+exports[`test/index.ts TAP walking follow=false, filter=false, walkFilter=true initial walk, sync > must match snapshot 1`] = `
 Set {
-  "{CWD}/test/tap-testdir-index-walking",
   "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d",
+}
+`
+
+exports[`test/index.ts TAP walking follow=false, filter=false, walkFilter=true initial walk, sync > must match snapshot 2`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d",
+}
+`
+
+exports[`test/index.ts TAP walking follow=false, filter=true, walkFilter=false initial walk, sync > must match snapshot 1`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/g",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/f",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/e",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/cycle",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/g",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/f",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/e",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/cycle",
+}
+`
+
+exports[`test/index.ts TAP walking follow=false, filter=true, walkFilter=false initial walk, sync > must match snapshot 2`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/g",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/f",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/e",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/cycle",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/g",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/f",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/e",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/cycle",
+}
+`
+
+exports[`test/index.ts TAP walking follow=false, filter=true, walkFilter=true initial walk, sync > must match snapshot 1`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+}
+`
+
+exports[`test/index.ts TAP walking follow=false, filter=true, walkFilter=true initial walk, sync > must match snapshot 2`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+}
+`
+
+exports[`test/index.ts TAP walking follow=true, filter=false, walkFilter=false initial walk, sync > must match snapshot 1`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/x/outside",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/g",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/f",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/e",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/cycle",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/g",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/f",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/e",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/cycle",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d",
+}
+`
+
+exports[`test/index.ts TAP walking follow=true, filter=false, walkFilter=false initial walk, sync > must match snapshot 2`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/x/outside",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/g",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/f",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/e",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/cycle",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/g",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/f",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/e",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/cycle",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d",
+}
+`
+
+exports[`test/index.ts TAP walking follow=true, filter=false, walkFilter=true initial walk, sync > must match snapshot 1`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/x/outside",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d",
+}
+`
+
+exports[`test/index.ts TAP walking follow=true, filter=false, walkFilter=true initial walk, sync > must match snapshot 2`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/x/outside",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d",
+}
+`
+
+exports[`test/index.ts TAP walking follow=true, filter=true, walkFilter=false initial walk, sync > must match snapshot 1`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/x/outside",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/g",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/f",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/e",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/cycle",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/g",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/f",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/e",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/cycle",
+}
+`
+
+exports[`test/index.ts TAP walking follow=true, filter=true, walkFilter=false initial walk, sync > must match snapshot 2`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/x/outside",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/g",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/f",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/e",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d/cycle",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/g",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/f",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/e",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d/cycle",
+}
+`
+
+exports[`test/index.ts TAP walking follow=true, filter=true, walkFilter=true initial walk, sync > must match snapshot 1`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/x/outside",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+}
+`
+
+exports[`test/index.ts TAP walking follow=true, filter=true, walkFilter=true initial walk, sync > must match snapshot 2`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/x/outside",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+}
+`
+
+exports[`test/index.ts TAP walking follow=undefined, filter=false, walkFilter=false initial walk, sync > must match snapshot 1`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
@@ -145,10 +353,10 @@ Set {
 }
 `
 
-exports[`test/index.ts TAP walking basic walks, follow=true, reuse=true initial walk, sync > must match snapshot 1`] = `
+exports[`test/index.ts TAP walking follow=undefined, filter=false, walkFilter=false initial walk, sync > must match snapshot 2`] = `
 Set {
-  "{CWD}/test/tap-testdir-index-walking",
   "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
@@ -165,19 +373,41 @@ Set {
 }
 `
 
-exports[`test/index.ts TAP walking basic walks, follow=undefined, reuse=false initial walk, sync > must match snapshot 1`] = `
+exports[`test/index.ts TAP walking follow=undefined, filter=false, walkFilter=true initial walk, sync > must match snapshot 1`] = `
 Set {
-  "{CWD}/test/tap-testdir-index-walking",
   "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d",
+}
+`
+
+exports[`test/index.ts TAP walking follow=undefined, filter=false, walkFilter=true initial walk, sync > must match snapshot 2`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/a/b/d",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c/d",
+}
+`
+
+exports[`test/index.ts TAP walking follow=undefined, filter=true, walkFilter=false initial walk, sync > must match snapshot 1`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/c",
   "{CWD}/test/tap-testdir-index-walking/a/b/d/g",
   "{CWD}/test/tap-testdir-index-walking/a/b/d/f",
   "{CWD}/test/tap-testdir-index-walking/a/b/d/e",
   "{CWD}/test/tap-testdir-index-walking/a/b/d/cycle",
-  "{CWD}/test/tap-testdir-index-walking/a/b/c/d",
   "{CWD}/test/tap-testdir-index-walking/a/b/c/d/g",
   "{CWD}/test/tap-testdir-index-walking/a/b/c/d/f",
   "{CWD}/test/tap-testdir-index-walking/a/b/c/d/e",
@@ -185,22 +415,40 @@ Set {
 }
 `
 
-exports[`test/index.ts TAP walking basic walks, follow=undefined, reuse=true initial walk, sync > must match snapshot 1`] = `
+exports[`test/index.ts TAP walking follow=undefined, filter=true, walkFilter=false initial walk, sync > must match snapshot 2`] = `
 Set {
-  "{CWD}/test/tap-testdir-index-walking",
   "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
-  "{CWD}/test/tap-testdir-index-walking/a/b/d",
   "{CWD}/test/tap-testdir-index-walking/a/b/c",
   "{CWD}/test/tap-testdir-index-walking/a/b/d/g",
   "{CWD}/test/tap-testdir-index-walking/a/b/d/f",
   "{CWD}/test/tap-testdir-index-walking/a/b/d/e",
   "{CWD}/test/tap-testdir-index-walking/a/b/d/cycle",
-  "{CWD}/test/tap-testdir-index-walking/a/b/c/d",
   "{CWD}/test/tap-testdir-index-walking/a/b/c/d/g",
   "{CWD}/test/tap-testdir-index-walking/a/b/c/d/f",
   "{CWD}/test/tap-testdir-index-walking/a/b/c/d/e",
   "{CWD}/test/tap-testdir-index-walking/a/b/c/d/cycle",
+}
+`
+
+exports[`test/index.ts TAP walking follow=undefined, filter=true, walkFilter=true initial walk, sync > must match snapshot 1`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
+}
+`
+
+exports[`test/index.ts TAP walking follow=undefined, filter=true, walkFilter=true initial walk, sync > must match snapshot 2`] = `
+Set {
+  "{CWD}/test/tap-testdir-index-walking/a",
+  "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/deeplink",
+  "{CWD}/test/tap-testdir-index-walking/a/b",
+  "{CWD}/test/tap-testdir-index-walking/a/b/c",
 }
 `

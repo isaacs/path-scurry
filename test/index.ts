@@ -15,6 +15,7 @@ import {
   PathWalkerPosix,
   PathWalkerWin32,
   PathWin32,
+  WalkOptions,
 } from '../'
 
 t.formatSnapshot = (o: any) =>
@@ -785,7 +786,12 @@ t.test('eloop', async t => {
 
 t.test('walking', async t => {
   const td = t.testdir({
+    y: t.fixture('symlink', 'x'),
+    x: {
+      outside: ''
+    },
     a: {
+      x: t.fixture('symlink', '../y'),
       deeplink: t.fixture('symlink', 'b/c/d'),
       b: {
         c: {
@@ -804,151 +810,169 @@ t.test('walking', async t => {
         },
       },
     },
-  })
-  for (const follow of [false, undefined, true]) {
-    for (const reuse of [false, true]) {
-      t.test(`basic walks, follow=${follow}, reuse=${reuse}`, async t => {
-        let pw = new PathWalker(td)
-        // if not following, then just take the default args when we
-        // walk to get the entries, to cover that code path.
-        const syncWalk = follow
-          ? pw.walkSync('', { follow })
-          : pw.walkSync()
-        const entries = new Set<PathBase>()
-        const paths = new Set<string>()
+  }) + '/a'
+  for (const filter of [undefined, (e: Path) => e.name !== 'd']) {
+    for (const walkFilter of [undefined, (e: Path) => e.name !== 'd']) {
+      for (const follow of [false, undefined, true]) {
+        for (const reuse of [false, true]) {
+          const opts: WalkOptions | undefined =
+            !follow && !walkFilter && !filter
+              ? undefined
+              : {
+                  follow,
+                  filter,
+                  walkFilter,
+                }
+          const name = [
+            `follow=${follow}`,
+            `filter=${!!filter}`,
+            `walkFilter=${!!walkFilter}`,
+          ].join(', ')
+          t.test(name, async t => {
+            let pw = new PathWalker(td)
+            // if not following, then just take the default args when we
+            // walk to get the entries, to cover that code path.
+            const syncWalk = opts ? pw.walkSync('', opts) : pw.walkSync()
+            const entries = new Set<PathBase>()
+            const paths = new Set<string>()
 
-        t.test('initial walk, sync', async t => {
-          for (const e of syncWalk) {
-            t.type(e, Path)
-            entries.add(e)
-            paths.add(e.fullpath())
-          }
-          t.matchSnapshot(paths)
-        })
-
-        const withFileTypes = false
-        t.test('second walkSync, strings', async t => {
-          if (!reuse) pw = new PathWalker(td)
-          const found = new Set<string>()
-          for (const path of pw.walkSync('', { follow, withFileTypes })) {
-            found.add(path)
-          }
-          t.same(found, paths)
-        })
-
-        t.test('async walk, objects', async t => {
-          if (!reuse) pw = new PathWalker(td)
-          const w = follow ? pw.walk('', { follow }) : pw.walk()
-          const found = new Set<Path>()
-          for (const path of await w) {
-            found.add(path)
-            if (reuse && !entries.has(path)) {
-              t.fail('not found in set: ' + path.fullpath())
-            }
-          }
-          t.same(found, entries)
-        })
-
-        t.test('async walk, strings', async t => {
-          const found = new Set<string>()
-          if (!reuse) pw = new PathWalker(td)
-          for (const path of await pw.walk('', {
-            follow,
-            withFileTypes,
-          })) {
-            found.add(path)
-            if (!paths.has(path)) {
-              t.fail('not found in set: ' + path)
-            }
-          }
-          t.same(found, paths)
-        })
-
-        if (!follow) {
-          // default iterators never follow
-          t.test('for [await] of', async t => {
-            if (!reuse) pw = new PathWalker(td)
-            const found = new Set<Path>()
-            for (const path of pw) {
-              found.add(path)
-              if (reuse && !entries.has(path)) {
-                t.fail('not found in set: ' + path.fullpath())
+            t.test('initial walk, sync', async t => {
+              for (const e of syncWalk) {
+                t.type(e, Path)
+                entries.add(e)
+                paths.add(e.fullpath())
               }
-            }
-            t.same(found, entries)
+              t.matchSnapshot(paths)
+            })
 
-            if (!reuse) pw = new PathWalker(td)
-            const found2 = new Set<Path>()
-            for await (const path of pw) {
-              found2.add(path)
-              if (reuse && !entries.has(path)) {
-                t.fail('not found in set: ' + path.fullpath())
+            const withFileTypes = false
+            t.test('second walkSync, strings', async t => {
+              if (!reuse) pw = new PathWalker(td)
+              const found = new Set<string>()
+              for (const path of pw.walkSync('', {
+                ...(opts || {}),
+                withFileTypes,
+              })) {
+                found.add(path)
               }
+              t.same(found, paths)
+            })
+
+            t.test('async walk, objects', async t => {
+              if (!reuse) pw = new PathWalker(td)
+              const w = opts ? pw.walk('', opts) : pw.walk()
+              const found = new Set<Path>()
+              for (const path of await w) {
+                found.add(path)
+                if (reuse && !entries.has(path)) {
+                  t.fail('not found in set: ' + path.fullpath())
+                }
+              }
+              t.same(found, entries)
+            })
+
+            t.test('async walk, strings', async t => {
+              const found = new Set<string>()
+              if (!reuse) pw = new PathWalker(td)
+              for (const path of await pw.walk('', {
+                ...(opts || {}),
+                withFileTypes,
+              })) {
+                found.add(path)
+                if (!paths.has(path)) {
+                  t.fail('not found in set: ' + path)
+                }
+              }
+              t.same(found, paths)
+            })
+
+            if (!opts) {
+              // default iterators never follow, filter, etc.
+              t.test('for [await] of', async t => {
+                if (!reuse) pw = new PathWalker(td)
+                const found = new Set<Path>()
+                for (const path of pw) {
+                  found.add(path)
+                  if (reuse && !entries.has(path)) {
+                    t.fail('not found in set: ' + path.fullpath())
+                  }
+                }
+                t.same(found, entries)
+
+                if (!reuse) pw = new PathWalker(td)
+                const found2 = new Set<Path>()
+                for await (const path of pw) {
+                  found2.add(path)
+                  if (reuse && !entries.has(path)) {
+                    t.fail('not found in set: ' + path.fullpath())
+                  }
+                }
+                t.same(found2, entries)
+              })
             }
-            t.same(found2, entries)
+
+            t.test('iterateSync', async t => {
+              if (!reuse) pw = new PathWalker(td)
+              const f = opts
+                ? pw.iterateSync('', opts)
+                : pw.iterateSync()
+              const found = new Set<Path>()
+              for (const path of f) {
+                found.add(path)
+                if (reuse && !entries.has(path)) {
+                  t.fail('not found in set: ' + path.fullpath())
+                }
+              }
+              t.same(found, entries)
+            })
+            t.test('iterateSync strings', async t => {
+              if (!reuse) pw = new PathWalker(td)
+              const found = new Set<string>()
+              for (const path of pw.iterateSync('', {
+                ...(opts || {}),
+                withFileTypes,
+              })) {
+                found.add(path)
+                if (!paths.has(path)) {
+                  t.fail('not found: ' + path)
+                }
+              }
+              t.same(found, paths)
+            })
+
+            t.test('async iterate', async t => {
+              if (!reuse) pw = new PathWalker(td)
+              const f = opts ? pw.iterate('', opts) : pw.iterate()
+              let found = new Set<Path>()
+              for await (const path of f) {
+                found.add(path)
+                if (reuse && !entries.has(path)) {
+                  t.fail('not found in set: ' + path.fullpath())
+                }
+              }
+              t.same(found, entries)
+            })
+
+            t.test('async iterate strings', async t => {
+              if (!reuse) pw = new PathWalker(td)
+              const found = new Set<string>()
+              for await (const path of pw.iterate('', {
+                ...(opts || {}),
+                withFileTypes,
+              })) {
+                if (!paths.has(path)) {
+                  t.fail('not found in set: ' + path)
+                }
+                found.add(path)
+                if (!paths.has(path)) {
+                  t.fail('not found: ' + path)
+                }
+              }
+              t.same(found, paths)
+            })
           })
         }
-
-        t.test('iterateSync', async t => {
-          if (!reuse) pw = new PathWalker(td)
-          const f = follow
-            ? pw.iterateSync('', { follow })
-            : pw.iterateSync()
-          const found = new Set<Path>()
-          for (const path of f) {
-            found.add(path)
-            if (reuse && !entries.has(path)) {
-              t.fail('not found in set: ' + path.fullpath())
-            }
-          }
-          t.same(found, entries)
-        })
-        t.test('iterateSync strings', async t => {
-          if (!reuse) pw = new PathWalker(td)
-          const found = new Set<string>()
-          for (const path of pw.iterateSync('', {
-            follow,
-            withFileTypes,
-          })) {
-            found.add(path)
-            if (!paths.has(path)) {
-              t.fail('not found: ' + path)
-            }
-          }
-          t.same(found, paths)
-        })
-
-        t.test('async iterate', async t => {
-          if (!reuse) pw = new PathWalker(td)
-          const f = follow ? pw.iterate('', { follow }) : pw.iterate()
-          let found = new Set<Path>()
-          for await (const path of f) {
-            found.add(path)
-            if (reuse && !entries.has(path)) {
-              t.fail('not found in set: ' + path.fullpath())
-            }
-          }
-          t.same(found, entries)
-        })
-
-        t.test('async iterate strings', async t => {
-          if (!reuse) pw = new PathWalker(td)
-          const found = new Set<string>()
-          for await (const path of pw.iterate('', {
-            follow,
-            withFileTypes,
-          })) {
-            if (!paths.has(path)) {
-              t.fail('not found in set: ' + path)
-            }
-            found.add(path)
-            if (!paths.has(path)) {
-              t.fail('not found: ' + path)
-            }
-          }
-          t.same(found, paths)
-        })
-      })
+      }
     }
   }
 })
