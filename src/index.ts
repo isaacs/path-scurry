@@ -1247,27 +1247,37 @@ export abstract class PathScurryBase {
    * Unlike `fs.readdir()`, the `withFileTypes` option defaults to `true`. Set
    * `{ withFileTypes: false }` to return strings.
    */
+
+  readdir(): Promise<PathBase[]>
+  readdir(opts: { withFileTypes: true }): Promise<PathBase[]>
+  readdir(opts: { withFileTypes: false }): Promise<string[]>
+  readdir(opts: { withFileTypes: boolean }): Promise<PathBase[] | string[]>
+  readdir(entry: PathBase | string): Promise<PathBase[]>
   readdir(
-    entry?: PathBase | string,
-    options?: { withFileTypes: true }
+    entry: PathBase | string,
+    opts: { withFileTypes: true }
   ): Promise<PathBase[]>
   readdir(
     entry: PathBase | string,
-    options: { withFileTypes: false }
+    opts: { withFileTypes: false }
   ): Promise<string[]>
   readdir(
     entry: PathBase | string,
-    options: { withFileTypes: boolean }
-  ): Promise<string[] | PathBase[]>
+    opts: { withFileTypes: boolean }
+  ): Promise<PathBase[] | string[]>
   async readdir(
-    entry: PathBase | string = this.cwd,
-    { withFileTypes = true }: { withFileTypes: boolean } = {
+    entry: PathBase | string | { withFileTypes: boolean } = this.cwd,
+    opts: { withFileTypes: boolean } = {
       withFileTypes: true,
     }
   ): Promise<PathBase[] | string[]> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
+    } else if (!(entry instanceof PathBase)) {
+      opts = entry
+      entry = this.cwd
     }
+    const { withFileTypes } = opts
     if (!entry.canReaddir()) {
       return []
     } else {
@@ -1279,27 +1289,36 @@ export abstract class PathScurryBase {
   /**
    * synchronous {@link PathScurryBase.readdir}
    */
+  readdirSync(): PathBase[]
+  readdirSync(opts: { withFileTypes: true }): PathBase[]
+  readdirSync(opts: { withFileTypes: false }): string[]
+  readdirSync(opts: { withFileTypes: boolean }): PathBase[] | string[]
+  readdirSync(entry: PathBase | string): PathBase[]
   readdirSync(
-    entry?: PathBase | string,
-    options?: { withFileTypes: true }
+    entry: PathBase | string,
+    opts: { withFileTypes: true }
   ): PathBase[]
   readdirSync(
     entry: PathBase | string,
-    options: { withFileTypes: false }
+    opts: { withFileTypes: false }
   ): string[]
   readdirSync(
     entry: PathBase | string,
-    options: { withFileTypes: boolean }
-  ): string[] | PathBase[]
+    opts: { withFileTypes: boolean }
+  ): PathBase[] | string[]
   readdirSync(
-    entry: PathBase | string = this.cwd,
-    { withFileTypes = true }: { withFileTypes: boolean } = {
+    entry: PathBase | string | { withFileTypes: boolean } = this.cwd,
+    opts: { withFileTypes: boolean } = {
       withFileTypes: true,
     }
   ): PathBase[] | string[] {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
+    } else if (!(entry instanceof PathBase)) {
+      opts = entry
+      entry = this.cwd
     }
+    const { withFileTypes = true } = opts
     if (!entry.canReaddir()) {
       return []
     } else if (withFileTypes) {
@@ -1357,6 +1376,12 @@ export abstract class PathScurryBase {
    * On success, returns a Path object if `withFileTypes` option is true,
    * otherwise a string.
    */
+  readlink(): Promise<string | undefined>
+  readlink(opt: { withFileTypes: false }): Promise<string | undefined>
+  readlink(opt: { withFileTypes: true }): Promise<PathBase | undefined>
+  readlink(opt: {
+    withFileTypes: boolean
+  }): Promise<PathBase | string | undefined>
   readlink(
     entry: string | PathBase,
     opt?: { withFileTypes: false }
@@ -1370,13 +1395,16 @@ export abstract class PathScurryBase {
     opt: { withFileTypes: boolean }
   ): Promise<string | PathBase | undefined>
   async readlink(
-    entry: string | PathBase,
+    entry: string | PathBase | { withFileTypes: boolean } = this.cwd,
     { withFileTypes }: { withFileTypes: boolean } = {
       withFileTypes: false,
     }
   ): Promise<string | PathBase | undefined> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
+    } else if (!(entry instanceof PathBase)) {
+      withFileTypes = entry.withFileTypes
+      entry = this.cwd
     }
     const e = await entry.readlink()
     return withFileTypes ? e : e?.fullpath()
@@ -1385,6 +1413,12 @@ export abstract class PathScurryBase {
   /**
    * synchronous {@link PathScurryBase.readlink}
    */
+  readlinkSync(): string | undefined
+  readlinkSync(opt: { withFileTypes: false }): string | undefined
+  readlinkSync(opt: { withFileTypes: true }): PathBase | undefined
+  readlinkSync(opt: {
+    withFileTypes: boolean
+  }): PathBase | string | undefined
   readlinkSync(
     entry: string | PathBase,
     opt?: { withFileTypes: false }
@@ -1398,13 +1432,16 @@ export abstract class PathScurryBase {
     opt: { withFileTypes: boolean }
   ): string | PathBase | undefined
   readlinkSync(
-    entry: string | PathBase,
+    entry: string | PathBase | { withFileTypes: boolean } = this.cwd,
     { withFileTypes }: { withFileTypes: boolean } = {
       withFileTypes: false,
     }
   ): string | PathBase | undefined {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
+    } else if (!(entry instanceof PathBase)) {
+      withFileTypes = entry.withFileTypes
+      entry = this.cwd
     }
     const e = entry.readlinkSync()
     return withFileTypes ? e : e?.fullpath()
@@ -1423,6 +1460,12 @@ export abstract class PathScurryBase {
    * On success, returns a Path object if `withFileTypes` option is true,
    * otherwise a string.
    */
+  realpath(): Promise<string | undefined>
+  realpath(opt: { withFileTypes: false }): Promise<string | undefined>
+  realpath(opt: { withFileTypes: true }): Promise<PathBase | undefined>
+  realpath(opt: {
+    withFileTypes: boolean
+  }): Promise<PathBase | string | undefined>
   realpath(
     entry: string | PathBase,
     opt?: { withFileTypes: false }
@@ -1436,18 +1479,27 @@ export abstract class PathScurryBase {
     opt: { withFileTypes: boolean }
   ): Promise<string | PathBase | undefined>
   async realpath(
-    entry: string | PathBase,
+    entry: string | PathBase | { withFileTypes: boolean } = this.cwd,
     { withFileTypes }: { withFileTypes: boolean } = {
       withFileTypes: false,
     }
   ): Promise<string | PathBase | undefined> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
+    } else if (!(entry instanceof PathBase)) {
+      withFileTypes = entry.withFileTypes
+      entry = this.cwd
     }
     const e = await entry.realpath()
     return withFileTypes ? e : e?.fullpath()
   }
 
+  realpathSync(): string | undefined
+  realpathSync(opt: { withFileTypes: false }): string | undefined
+  realpathSync(opt: { withFileTypes: true }): PathBase | undefined
+  realpathSync(opt: {
+    withFileTypes: boolean
+  }): PathBase | string | undefined
   realpathSync(
     entry: string | PathBase,
     opt?: { withFileTypes: false }
@@ -1461,13 +1513,16 @@ export abstract class PathScurryBase {
     opt: { withFileTypes: boolean }
   ): string | PathBase | undefined
   realpathSync(
-    entry: string | PathBase,
+    entry: string | PathBase | { withFileTypes: boolean } = this.cwd,
     { withFileTypes }: { withFileTypes: boolean } = {
       withFileTypes: false,
     }
   ): string | PathBase | undefined {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
+    } else if (!(entry instanceof PathBase)) {
+      withFileTypes = entry.withFileTypes
+      entry = this.cwd
     }
     const e = entry.realpathSync()
     return withFileTypes ? e : e?.fullpath()
@@ -1481,7 +1536,13 @@ export abstract class PathScurryBase {
    * In such cases, it may be better to use the stream or async iterator
    * walk implementation.
    */
-  walk(entry?: string | PathBase): Promise<PathBase[]>
+  walk(): Promise<PathBase[]>
+  walk(
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+  ): Promise<PathBase[]>
+  walk(opts: WalkOptionsWithFileTypesFalse): Promise<string[]>
+  walk(opts: WalkOptions): Promise<string[] | PathBase[]>
+  walk(entry: string | PathBase): Promise<PathBase[]>
   walk(
     entry: string | PathBase,
     opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
@@ -1495,17 +1556,21 @@ export abstract class PathScurryBase {
     opts: WalkOptions
   ): Promise<PathBase[] | string[]>
   async walk(
-    entry: string | PathBase = this.cwd,
-    {
+    entry: string | PathBase | WalkOptions = this.cwd,
+    opts: WalkOptions = {}
+  ): Promise<PathBase[] | string[]> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    } else if (!(entry instanceof PathBase)) {
+      opts = entry
+      entry = this.cwd
+    }
+    const {
       withFileTypes = true,
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = {}
-  ): Promise<PathBase[] | string[]> {
-    if (typeof entry === 'string') {
-      entry = this.cwd.resolve(entry)
-    }
+    } = opts
     const results: (string | PathBase)[] = []
     if (!filter || filter(entry)) {
       results.push(withFileTypes ? entry : entry.fullpath())
@@ -1569,7 +1634,13 @@ export abstract class PathScurryBase {
    * In such cases, it may be better to use the stream or async iterator
    * walk implementation.
    */
-  walkSync(entry?: string | PathBase): PathBase[]
+  walkSync(): PathBase[]
+  walkSync(
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+  ): PathBase[]
+  walkSync(opts: WalkOptionsWithFileTypesFalse): string[]
+  walkSync(opts: WalkOptions): string[] | PathBase[]
+  walkSync(entry: string | PathBase): PathBase[]
   walkSync(
     entry: string | PathBase,
     opts: WalkOptionsWithFileTypesUnset | WalkOptionsWithFileTypesTrue
@@ -1583,17 +1654,21 @@ export abstract class PathScurryBase {
     opts: WalkOptions
   ): PathBase[] | string[]
   walkSync(
-    entry: string | PathBase = this.cwd,
-    {
+    entry: string | PathBase | WalkOptions = this.cwd,
+    opts: WalkOptions = {}
+  ): PathBase[] | string[] {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    } else if (!(entry instanceof PathBase)) {
+      opts = entry
+      entry = this.cwd
+    }
+    const {
       withFileTypes = true,
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = {}
-  ): PathBase[] | string[] {
-    if (typeof entry === 'string') {
-      entry = this.cwd.resolve(entry)
-    }
+    } = opts
     const results: (string | PathBase)[] = []
     if (!filter || filter(entry)) {
       results.push(withFileTypes ? entry : entry.fullpath())
@@ -1639,7 +1714,15 @@ export abstract class PathScurryBase {
    * walked.  Consider using {@link PathScurryBase.stream} if memory overhead
    * and backpressure are concerns, or {@link PathScurryBase.walk} if not.
    */
-  iterate(entry?: string | PathBase): AsyncGenerator<PathBase, void, void>
+  iterate(): AsyncGenerator<PathBase, void, void>
+  iterate(
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+  ): AsyncGenerator<PathBase, void, void>
+  iterate(
+    opts: WalkOptionsWithFileTypesFalse
+  ): AsyncGenerator<string, void, void>
+  iterate(opts: WalkOptions): AsyncGenerator<string | PathBase, void, void>
+  iterate(entry: string | PathBase): AsyncGenerator<PathBase, void, void>
   iterate(
     entry: string | PathBase,
     opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
@@ -1653,12 +1736,18 @@ export abstract class PathScurryBase {
     opts: WalkOptions
   ): AsyncGenerator<PathBase | string, void, void>
   iterate(
-    entry: string | PathBase = this.cwd,
+    entry: string | PathBase | WalkOptions = this.cwd,
     options: WalkOptions = {}
   ): AsyncGenerator<PathBase | string, void, void> {
     // iterating async over the stream is significantly more performant,
     // especially in the warm-cache scenario, because it buffers up directory
     // entries in the background instead of waiting for a yield for each one.
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    } else if (!(entry instanceof PathBase)) {
+      options = entry
+      entry = this.cwd
+    }
     return this.stream(entry, options)[Symbol.asyncIterator]()
   }
 
@@ -1671,7 +1760,15 @@ export abstract class PathScurryBase {
     return this.iterateSync()
   }
 
-  iterateSync(entry?: string | PathBase): Generator<PathBase, void, void>
+  iterateSync(): Generator<PathBase, void, void>
+  iterateSync(
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+  ): Generator<PathBase, void, void>
+  iterateSync(
+    opts: WalkOptionsWithFileTypesFalse
+  ): Generator<string, void, void>
+  iterateSync(opts: WalkOptions): Generator<string | PathBase, void, void>
+  iterateSync(entry: string | PathBase): Generator<PathBase, void, void>
   iterateSync(
     entry: string | PathBase,
     opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
@@ -1685,17 +1782,21 @@ export abstract class PathScurryBase {
     opts: WalkOptions
   ): Generator<PathBase | string, void, void>
   *iterateSync(
-    entry: string | PathBase = this.cwd,
-    {
+    entry: string | PathBase | WalkOptions = this.cwd,
+    opts: WalkOptions = {}
+  ): Generator<PathBase | string, void, void> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    } else if (!(entry instanceof PathBase)) {
+      opts = entry
+      entry = this.cwd
+    }
+    const {
       withFileTypes = true,
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = {}
-  ): Generator<PathBase | string, void, void> {
-    if (typeof entry === 'string') {
-      entry = this.cwd.resolve(entry)
-    }
+    } = opts
     if (!filter || filter(entry)) {
       yield withFileTypes ? entry : entry.fullpath()
     }
@@ -1724,7 +1825,13 @@ export abstract class PathScurryBase {
    * Returns a Minipass stream that emits {@link PathBase} objects by default,
    * or strings if `{ withFileTypes: false }` is set in the options.
    */
-  stream(entry?: string | PathBase): Minipass<PathBase>
+  stream(): Minipass<PathBase>
+  stream(
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+  ): Minipass<PathBase>
+  stream(opts: WalkOptionsWithFileTypesFalse): Minipass<string>
+  stream(opts: WalkOptions): Minipass<string | PathBase>
+  stream(entry: string | PathBase): Minipass<PathBase>
   stream(
     entry: string | PathBase,
     opts: WalkOptionsWithFileTypesUnset | WalkOptionsWithFileTypesTrue
@@ -1738,17 +1845,21 @@ export abstract class PathScurryBase {
     opts: WalkOptions
   ): Minipass<string> | Minipass<PathBase>
   stream(
-    entry: string | PathBase = this.cwd,
-    {
+    entry: string | PathBase | WalkOptions = this.cwd,
+    opts: WalkOptions = {}
+  ): Minipass<string> | Minipass<PathBase> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    } else if (!(entry instanceof PathBase)) {
+      opts = entry
+      entry = this.cwd
+    }
+    const {
       withFileTypes = true,
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = {}
-  ): Minipass<string> | Minipass<PathBase> {
-    if (typeof entry === 'string') {
-      entry = this.cwd.resolve(entry)
-    }
+    } = opts
     const results = new Minipass<string | PathBase>({ objectMode: true })
     if (!filter || filter(entry)) {
       results.write(withFileTypes ? entry : entry.fullpath())
@@ -1838,7 +1949,13 @@ export abstract class PathScurryBase {
    * Will complete the walk in a single tick if the stream is consumed fully.
    * Otherwise, will pause as needed for stream backpressure.
    */
-  streamSync(entry?: string | PathBase): Minipass<PathBase>
+  streamSync(): Minipass<PathBase>
+  streamSync(
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+  ): Minipass<PathBase>
+  streamSync(opts: WalkOptionsWithFileTypesFalse): Minipass<string>
+  streamSync(opts: WalkOptions): Minipass<string | PathBase>
+  streamSync(entry: string | PathBase): Minipass<PathBase>
   streamSync(
     entry: string | PathBase,
     opts: WalkOptionsWithFileTypesUnset | WalkOptionsWithFileTypesTrue
@@ -1850,19 +1967,23 @@ export abstract class PathScurryBase {
   streamSync(
     entry: string | PathBase,
     opts: WalkOptions
-  ): Minipass<PathBase> | Minipass<string>
+  ): Minipass<string> | Minipass<PathBase>
   streamSync(
-    entry: string | PathBase = this.cwd,
-    {
+    entry: string | PathBase | WalkOptions = this.cwd,
+    opts: WalkOptions = {}
+  ): Minipass<string> | Minipass<PathBase> {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    } else if (!(entry instanceof PathBase)) {
+      opts = entry
+      entry = this.cwd
+    }
+    const {
       withFileTypes = true,
       follow = false,
       filter,
       walkFilter,
-    }: WalkOptions = {}
-  ): Minipass<string> | Minipass<PathBase> {
-    if (typeof entry === 'string') {
-      entry = this.cwd.resolve(entry)
-    }
+    } = opts
     const results = new Minipass<string | PathBase>({ objectMode: true })
     const dirs = new Set<PathBase>()
     if (!filter || filter(entry)) {

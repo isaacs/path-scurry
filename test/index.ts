@@ -191,6 +191,19 @@ t.test('readlink', async t => {
   t.equal(await pw.readlink('/'), undefined)
   t.equal(pw.readlinkSync('/'), undefined)
 
+  // calling without a path reads cwd
+  const onLink = new PathScurry(dir + '/dir/link')
+  const withFileTypes = true
+  t.equal(await onLink.readlink(), resolve(dir, 'hello'))
+  t.equal(
+    onLink.readlinkSync({ withFileTypes })?.fullpath(),
+    resolve(dir, 'hello')
+  )
+  t.equal(
+    (await onLink.readlink({ withFileTypes }))?.fullpath(),
+    resolve(dir, 'hello')
+  )
+
   t.equal(await pw.cwd.resolve('link').readlink(), pw.cwd.resolve('hello'))
   t.equal(
     await pw.cwd.resolve('dir/link').readlink(),
@@ -322,6 +335,22 @@ t.test('readdir, simple basic', async t => {
   )
   t.same(
     new Set(await pw.readdir('', { withFileTypes: false })),
+    new Set(['dir', 'link', 'file1', 'file2'])
+  )
+  t.same(
+    new Set(pw.readdirSync({ withFileTypes: false })),
+    new Set(['dir', 'link', 'file1', 'file2'])
+  )
+  t.same(
+    new Set(await pw.readdir({ withFileTypes: false })),
+    new Set(['dir', 'link', 'file1', 'file2'])
+  )
+  t.same(
+    new Set(pw.readdirSync().map(e => e.name)),
+    new Set(['dir', 'link', 'file1', 'file2'])
+  )
+  t.same(
+    new Set((await pw.readdir()).map(e => e.name)),
     new Set(['dir', 'link', 'file1', 'file2'])
   )
   t.same(pw.cwd.resolve('link').readdirSync(), [])
@@ -872,6 +901,11 @@ t.test('eloop', async t => {
     for (const p of paths) {
       syncResults[p] = pw.realpathSync(p)
       t.equal(pw.cwd.resolve(p).realpathSync()?.fullpath(), syncResults[p])
+      const onPath = new PathScurry(pw.resolve(p))
+      t.equal(
+        onPath.realpathSync({ withFileTypes: true })?.fullpath(),
+        syncResults[p]
+      )
     }
     t.matchSnapshot(syncResults)
     const sr2: typeof syncResults = {}
@@ -894,6 +928,12 @@ t.test('eloop', async t => {
       const entry = await pw.realpath(p, { withFileTypes: true })
       if (entry) t.type(entry, Path)
       ar2[p] = entry?.fullpath()
+      const onPath = new PathScurry(pw.resolve(p))
+      t.equal(
+        (await onPath.realpath({ withFileTypes: true }))?.fullpath(),
+        ar2[p]
+      )
+      t.equal(await onPath.realpath(), ar2[p])
     }
     t.same(ar2, asyncResults)
   })
@@ -936,226 +976,250 @@ t.test('walking', async t => {
         },
       },
     }) + '/a'
-  for (const filter of [undefined, (e: Path) => e.name !== 'd']) {
-    for (const walkFilter of [undefined, (e: Path) => e.name !== 'd']) {
-      for (const follow of [false, undefined, true]) {
-        for (const reuse of [false, true]) {
-          const opts: WalkOptions | undefined =
-            !follow && !walkFilter && !filter
-              ? undefined
-              : {
-                  follow,
-                  filter,
-                  walkFilter,
+  for (const optFirst of [false, true]) {
+    for (const filter of [undefined, (e: Path) => e.name !== 'd']) {
+      for (const walkFilter of [undefined, (e: Path) => e.name !== 'd']) {
+        for (const follow of [false, undefined, true]) {
+          for (const reuse of [false, true]) {
+            const opts: WalkOptions | undefined =
+              !follow && !walkFilter && !filter && !optFirst
+                ? undefined
+                : {
+                    follow,
+                    filter,
+                    walkFilter,
+                  }
+            const name = [
+              `follow=${follow}`,
+              `filter=${!!filter}`,
+              `walkFilter=${!!walkFilter}`,
+            ].join(', ')
+            t.test(name, async t => {
+              let pw = new PathScurry(td)
+              // if not following, then just take the default args when we
+              // walk to get the entries, to cover that code path.
+              const syncWalk = opts
+                ? optFirst
+                  ? pw.walkSync(opts)
+                  : pw.walkSync('', opts)
+                : pw.walkSync()
+              const entries = new Set<PathBase>()
+              const paths = new Set<string>()
+
+              t.test('initial walk, sync', async t => {
+                for (const e of syncWalk) {
+                  t.type(e, Path)
+                  entries.add(e)
+                  paths.add(e.fullpath())
                 }
-          const name = [
-            `follow=${follow}`,
-            `filter=${!!filter}`,
-            `walkFilter=${!!walkFilter}`,
-          ].join(', ')
-          t.test(name, async t => {
-            let pw = new PathScurry(td)
-            // if not following, then just take the default args when we
-            // walk to get the entries, to cover that code path.
-            const syncWalk = opts ? pw.walkSync('', opts) : pw.walkSync()
-            const entries = new Set<PathBase>()
-            const paths = new Set<string>()
+                t.matchSnapshot(paths)
+              })
 
-            t.test('initial walk, sync', async t => {
-              for (const e of syncWalk) {
-                t.type(e, Path)
-                entries.add(e)
-                paths.add(e.fullpath())
-              }
-              t.matchSnapshot(paths)
-            })
-
-            const withFileTypes = false
-            t.test('second walkSync, strings', async t => {
-              if (!reuse) pw = new PathScurry(td)
-              const found = new Set<string>()
-              for (const path of pw.walkSync('', {
-                ...(opts || {}),
-                withFileTypes,
-              })) {
-                found.add(path)
-              }
-              t.same(found, paths)
-            })
-
-            t.test('async walk, objects', async t => {
-              if (!reuse) pw = new PathScurry(td)
-              const w = opts ? pw.walk('', opts) : pw.walk()
-              const found = new Set<Path>()
-              for (const path of await w) {
-                found.add(path)
-                if (reuse && !entries.has(path)) {
-                  t.fail('not found in set: ' + path.fullpath())
-                }
-              }
-              t.same(found, entries)
-            })
-
-            t.test('async walk, strings', async t => {
-              const found = new Set<string>()
-              if (!reuse) pw = new PathScurry(td)
-              for (const path of await pw.walk('', {
-                ...(opts || {}),
-                withFileTypes,
-              })) {
-                found.add(path)
-                if (!paths.has(path)) {
-                  t.fail('not found in set: ' + path)
-                }
-              }
-              t.same(found, paths)
-            })
-
-            if (!opts) {
-              // default iterators never follow, filter, etc.
-              t.test('for [await] of', async t => {
+              const withFileTypes = false
+              t.test('second walkSync, strings', async t => {
                 if (!reuse) pw = new PathScurry(td)
+                const found = new Set<string>()
+                for (const path of pw.walkSync('', {
+                  ...(opts || {}),
+                  withFileTypes,
+                })) {
+                  found.add(path)
+                }
+                t.same(found, paths)
+              })
+
+              t.test('async walk, objects', async t => {
+                if (!reuse) pw = new PathScurry(td)
+                const w = opts
+                  ? optFirst
+                    ? pw.walk(opts)
+                    : pw.walk('', opts)
+                  : pw.walk()
                 const found = new Set<Path>()
-                for (const path of pw) {
+                for (const path of await w) {
                   found.add(path)
                   if (reuse && !entries.has(path)) {
                     t.fail('not found in set: ' + path.fullpath())
                   }
                 }
                 t.same(found, entries)
+              })
 
+              t.test('async walk, strings', async t => {
+                const found = new Set<string>()
                 if (!reuse) pw = new PathScurry(td)
-                const found2 = new Set<Path>()
-                for await (const path of pw) {
-                  found2.add(path)
+                for (const path of await pw.walk('', {
+                  ...(opts || {}),
+                  withFileTypes,
+                })) {
+                  found.add(path)
+                  if (!paths.has(path)) {
+                    t.fail('not found in set: ' + path)
+                  }
+                }
+                t.same(found, paths)
+              })
+
+              if (!opts) {
+                // default iterators never follow, filter, etc.
+                t.test('for [await] of', async t => {
+                  if (!reuse) pw = new PathScurry(td)
+                  const found = new Set<Path>()
+                  for (const path of pw) {
+                    found.add(path)
+                    if (reuse && !entries.has(path)) {
+                      t.fail('not found in set: ' + path.fullpath())
+                    }
+                  }
+                  t.same(found, entries)
+
+                  if (!reuse) pw = new PathScurry(td)
+                  const found2 = new Set<Path>()
+                  for await (const path of pw) {
+                    found2.add(path)
+                    if (reuse && !entries.has(path)) {
+                      t.fail('not found in set: ' + path.fullpath())
+                    }
+                  }
+                  t.same(found2, entries)
+                })
+              }
+
+              t.test('iterateSync', async t => {
+                if (!reuse) pw = new PathScurry(td)
+                const f = opts
+                  ? optFirst
+                    ? pw.iterateSync(opts)
+                    : pw.iterateSync('', opts)
+                  : pw.iterateSync()
+                const found = new Set<Path>()
+                for (const path of f) {
+                  found.add(path)
                   if (reuse && !entries.has(path)) {
                     t.fail('not found in set: ' + path.fullpath())
                   }
                 }
-                t.same(found2, entries)
+                t.same(found, entries)
               })
-            }
-
-            t.test('iterateSync', async t => {
-              if (!reuse) pw = new PathScurry(td)
-              const f = opts ? pw.iterateSync('', opts) : pw.iterateSync()
-              const found = new Set<Path>()
-              for (const path of f) {
-                found.add(path)
-                if (reuse && !entries.has(path)) {
-                  t.fail('not found in set: ' + path.fullpath())
+              t.test('iterateSync strings', async t => {
+                if (!reuse) pw = new PathScurry(td)
+                const found = new Set<string>()
+                for (const path of pw.iterateSync('', {
+                  ...(opts || {}),
+                  withFileTypes,
+                })) {
+                  found.add(path)
+                  if (!paths.has(path)) {
+                    t.fail('not found: ' + path)
+                  }
                 }
-              }
-              t.same(found, entries)
-            })
-            t.test('iterateSync strings', async t => {
-              if (!reuse) pw = new PathScurry(td)
-              const found = new Set<string>()
-              for (const path of pw.iterateSync('', {
-                ...(opts || {}),
-                withFileTypes,
-              })) {
-                found.add(path)
-                if (!paths.has(path)) {
-                  t.fail('not found: ' + path)
-                }
-              }
-              t.same(found, paths)
-            })
-
-            t.test('async iterate', async t => {
-              if (!reuse) pw = new PathScurry(td)
-              const f = opts ? pw.iterate('', opts) : pw.iterate()
-              let found = new Set<Path>()
-              for await (const path of f) {
-                found.add(path)
-                if (reuse && !entries.has(path)) {
-                  t.fail('not found in set: ' + path.fullpath())
-                }
-              }
-              t.same(found, entries)
-            })
-
-            t.test('async iterate strings', async t => {
-              if (!reuse) pw = new PathScurry(td)
-              const found = new Set<string>()
-              for await (const path of pw.iterate('', {
-                ...(opts || {}),
-                withFileTypes,
-              })) {
-                if (!paths.has(path)) {
-                  t.fail('not found in set: ' + path)
-                }
-                found.add(path)
-                if (!paths.has(path)) {
-                  t.fail('not found: ' + path)
-                }
-              }
-              t.same(found, paths)
-            })
-
-            t.test('stream', async t => {
-              if (!reuse) pw = new PathScurry(td)
-              const found = new Set<Path>()
-              const stream = !opts ? pw.stream() : pw.stream('', opts)
-              stream.on('data', path => {
-                found.add(path)
-                if (reuse && !entries.has(path)) {
-                  t.fail('not foundin set: ' + path.fullpath())
-                }
+                t.same(found, paths)
               })
-              await stream.promise()
-              t.same(found, entries)
-            })
 
-            t.test('stream, strings', async t => {
-              if (!reuse) pw = new PathScurry(td)
-              const found = new Set<string>()
-              const stream = pw.stream('', {
-                ...(opts || {}),
-                withFileTypes,
-              })
-              stream.on('data', path => {
-                found.add(path)
-                if (reuse && !paths.has(path)) {
-                  t.fail('not foundin set: ' + path)
+              t.test('async iterate', async t => {
+                if (!reuse) pw = new PathScurry(td)
+                const f = opts
+                  ? optFirst
+                    ? pw.iterate(opts)
+                    : pw.iterate('', opts)
+                  : pw.iterate()
+                let found = new Set<Path>()
+                for await (const path of f) {
+                  found.add(path)
+                  if (reuse && !entries.has(path)) {
+                    t.fail('not found in set: ' + path.fullpath())
+                  }
                 }
+                t.same(found, entries)
               })
-              await stream.promise()
-              t.same(found, paths)
-            })
 
-            t.test('streamSync', async t => {
-              if (!reuse) pw = new PathScurry(td)
-              const found = new Set<Path>()
-              const stream = !opts
-                ? pw.streamSync()
-                : pw.streamSync('', opts)
-              stream.on('data', path => {
-                found.add(path)
-                if (reuse && !entries.has(path)) {
-                  t.fail('not foundin set: ' + path.fullpath())
+              t.test('async iterate strings', async t => {
+                if (!reuse) pw = new PathScurry(td)
+                const found = new Set<string>()
+                for await (const path of pw.iterate('', {
+                  ...(opts || {}),
+                  withFileTypes,
+                })) {
+                  if (!paths.has(path)) {
+                    t.fail('not found in set: ' + path)
+                  }
+                  found.add(path)
+                  if (!paths.has(path)) {
+                    t.fail('not found: ' + path)
+                  }
                 }
+                t.same(found, paths)
               })
-              t.same(found, entries)
-            })
 
-            t.test('streamSync, strings', async t => {
-              if (!reuse) pw = new PathScurry(td)
-              const found = new Set<string>()
-              const stream = pw.streamSync('', {
-                ...(opts || {}),
-                withFileTypes,
+              t.test('stream', async t => {
+                if (!reuse) pw = new PathScurry(td)
+                const found = new Set<Path>()
+                const stream = opts
+                  ? optFirst
+                    ? pw.stream(opts)
+                    : pw.stream('', opts)
+                  : pw.stream()
+                stream.on('data', path => {
+                  found.add(path)
+                  if (reuse && !entries.has(path)) {
+                    t.fail('not foundin set: ' + path.fullpath())
+                  }
+                })
+                await stream.promise()
+                t.same(found, entries)
               })
-              stream.on('data', path => {
-                found.add(path)
-                if (reuse && !paths.has(path)) {
-                  t.fail('not foundin set: ' + path)
-                }
+
+              t.test('stream, strings', async t => {
+                if (!reuse) pw = new PathScurry(td)
+                const found = new Set<string>()
+                const stream = pw.stream('', {
+                  ...(opts || {}),
+                  withFileTypes,
+                })
+                stream.on('data', path => {
+                  found.add(path)
+                  if (reuse && !paths.has(path)) {
+                    t.fail('not foundin set: ' + path)
+                  }
+                })
+                await stream.promise()
+                t.same(found, paths)
               })
-              t.same(found, paths)
+
+              t.test('streamSync', async t => {
+                if (!reuse) pw = new PathScurry(td)
+                const found = new Set<Path>()
+                const stream = opts
+                  ? optFirst
+                    ? pw.streamSync(opts)
+                    : pw.streamSync('', opts)
+                  : pw.streamSync()
+                stream.on('data', path => {
+                  found.add(path)
+                  if (reuse && !entries.has(path)) {
+                    t.fail('not foundin set: ' + path.fullpath())
+                  }
+                })
+                t.same(found, entries)
+              })
+
+              t.test('streamSync, strings', async t => {
+                if (!reuse) pw = new PathScurry(td)
+                const found = new Set<string>()
+                const stream = pw.streamSync('', {
+                  ...(opts || {}),
+                  withFileTypes,
+                })
+                stream.on('data', path => {
+                  found.add(path)
+                  if (reuse && !paths.has(path)) {
+                    t.fail('not foundin set: ' + path)
+                  }
+                })
+                t.same(found, paths)
+              })
             })
-          })
+          }
         }
       }
     }

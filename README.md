@@ -276,33 +276,37 @@ the current platform.
 Use `PathScurryWin32`, `PathScurryDarwin`, or `PathScurryPosix`
 if implementation-specific behavior is desired.
 
-#### `async pw.walk(entry?: string | Path, opts?: WalkOptions)`
+All walk methods may be called with a `WalkOptions` argument to
+walk over the object's current working directory with the
+supplied options.
+
+#### `async pw.walk(entry?: string | Path | WalkOptions, opts?: WalkOptions)`
 
 Walk the directory tree according to the options provided,
 resolving to an array of all entries found.
 
-#### `pw.walkSync(entry?: string | Path, opts?: WalkOptions)`
+#### `pw.walkSync(entry?: string | Path | WalkOptions, opts?: WalkOptions)`
 
 Walk the directory tree according to the options provided,
 returning an array of all entries found.
 
-#### `pw.iterate(entry?: string | Path, opts?: WalkOptions)`
+#### `pw.iterate(entry?: string | Path | WalkOptions, opts?: WalkOptions)`
 
 Iterate over the directory asynchronously, for use with `for
 await of`. This is also the default async iterator method.
 
-#### `pw.iterateSync(entry?: string | Path, opts?: WalkOptions)`
+#### `pw.iterateSync(entry?: string | Path | WalkOptions, opts?: WalkOptions)`
 
 Iterate over the directory synchronously, for use with `for of`.
 This is also the default sync iterator method.
 
-#### `pw.stream(entry?: string | Path, opts?: WalkOptions)`
+#### `pw.stream(entry?: string | Path | WalkOptions, opts?: WalkOptions)`
 
 Return a [Minipass](http://npm.im/minipass) stream that emits
 each entry or path string in the walk. Results are made
 available asynchronously.
 
-#### `pw.streamSync(entry?: string | Path, opts?: WalkOptions)`
+#### `pw.streamSync(entry?: string | Path | WalkOptions, opts?: WalkOptions)`
 
 Return a [Minipass](http://npm.im/minipass) stream that emits
 each entry or path string in the walk. Results are made
@@ -334,11 +338,14 @@ Return the basename of the provided string or Path.
 
 Return the parent directory of the supplied string or Path.
 
-#### `async pw.readdir(dir = pw.cwd, opts?: { withFileTypes: boolean })`
+#### `async pw.readdir(dir = pw.cwd, opts = { withFileTypes: true })`
 
 Read the directory and resolve to an array of strings if
 `withFileTypes` is explicitly set to `false` or Path objects
 otherwise.
+
+Can be called as `pw.readdir({ withFileTypes: boolean })` as
+well.
 
 Returns `[]` if no entries are found, or if any error occurs.
 
@@ -346,14 +353,17 @@ Note that TypeScript return types will only be inferred properly
 from static analysis if the `withFileTypes` option is omitted, or
 a constant `true` or `false` value.
 
-#### `pw.readdirSync(dir = pw.cwd, opts?: { withFileTypes: boolean })`
+#### `pw.readdirSync(dir = pw.cwd, opts = { withFileTypes: true })`
 
 Synchronous `pw.readdir()`
 
-#### `async pw.readlink(link = pw.cwd, opts?: { withFileTypes: boolean })`
+#### `async pw.readlink(link = pw.cwd, opts = { withFileTypes: false })`
 
 Call `fs.readlink` on the supplied string or Path object, and
 return the result.
+
+Can be called as `pw.readlink({ withFileTypes: boolean })` as
+well.
 
 Returns `undefined` if any error occurs (for example, if the
 argument is not a symbolic link), or a `Path` object if
@@ -364,7 +374,7 @@ Note that TypeScript return types will only be inferred properly
 from static analysis if the `withFileTypes` option is omitted, or
 a constant `true` or `false` value.
 
-#### `pw.readlinkSync(link = pw.cwd, opts?: { withFileTypes: boolean })`
+#### `pw.readlinkSync(link = pw.cwd, opts = { withFileTypes: false })`
 
 Synchronous `pw.readlink()`
 
@@ -384,6 +394,20 @@ not be supplied. For those things, you'll need to call
 #### `pw.lstatSync(entry = pw.cwd)`
 
 Synchronous `pw.lstat()`
+
+#### `pw.realpath(entry = pw.cwd, opts = { withFileTypes: false })`
+
+Call `fs.realpath` on the supplied string or Path object, and
+return the realpath if available.
+
+Returns `undefined` if any error occurs.
+
+May be called as `pw.realpath({ withFileTypes: boolean })` to run
+on `pw.cwd`.
+
+#### `pw.realpathSync(entry = pw.cwd, opts = { withFileTypes: false })`
+
+Synchronous `pw.realpath()`
 
 ### Class `Path` implements [fs.Dirent](https://nodejs.org/docs/latest/api/fs.html#class-fsdirent)
 
@@ -432,7 +456,8 @@ as resolved from the current Path object.
 Return an array of `Path` objects found by reading the associated
 path entry.
 
-If path is not a directory, or if any error occurs, returns `[]`
+If path is not a directory, or if any error occurs, returns `[]`,
+and marks all children as provisional and non-existent.
 
 #### `path.readdirSync()`
 
@@ -461,3 +486,12 @@ If path does not exist, or any other error occurs, returns
 #### `path.lstatSync()`
 
 Synchronous `path.lstat()`
+
+#### `async path.realpath()`
+
+Call `realpath` on the path, and return a Path object
+corresponding to the result, or `undefined` if any error occurs.
+
+#### `path.realpathSync()`
+
+Synchornous `path.realpath()`
