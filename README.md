@@ -71,8 +71,8 @@ faster than `path.resolve` on repeated resolutions, but around
 program is spending a lot of time resolving the _same_ paths
 repeatedly (like, thousands or millions of times), then this can
 be beneficial. But both implementations are pretty fast, and
-improving speeding up an infrequent operation from 4µs to 400ns
-is not going to move the needle on your app's performance.
+speeding up an infrequent operation from 4µs to 400ns is not
+going to move the needle on your app's performance.
 
 For walking file system directory trees, a lot depends on how
 often a given PathScurry object will be used, and also on the
