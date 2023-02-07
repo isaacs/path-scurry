@@ -1,6 +1,6 @@
 {
   "name": "path-walker",
-  "version": "0.0.0-0",
+  "version": "0.0.0",
   "description": "walk paths efficiently",
   "author": "Isaac Z. Schlueter <i@izs.me> (https://blog.izs.me)",
   "main": "./dist/cjs/index.js",
