@@ -785,32 +785,33 @@ t.test('eloop', async t => {
 })
 
 t.test('walking', async t => {
-  const td = t.testdir({
-    y: t.fixture('symlink', 'x'),
-    x: {
-      outside: ''
-    },
-    a: {
-      x: t.fixture('symlink', '../y'),
-      deeplink: t.fixture('symlink', 'b/c/d'),
-      b: {
-        c: {
+  const td =
+    t.testdir({
+      y: t.fixture('symlink', 'x'),
+      x: {
+        outside: '',
+      },
+      a: {
+        x: t.fixture('symlink', '../y'),
+        deeplink: t.fixture('symlink', 'b/c/d'),
+        b: {
+          c: {
+            d: {
+              e: '',
+              f: '',
+              g: '',
+              cycle: t.fixture('symlink', '../../..'),
+            },
+          },
           d: {
             e: '',
             f: '',
             g: '',
-            cycle: t.fixture('symlink', '../../..'),
+            cycle: t.fixture('symlink', '../..'),
           },
         },
-        d: {
-          e: '',
-          f: '',
-          g: '',
-          cycle: t.fixture('symlink', '../..'),
-        },
       },
-    },
-  }) + '/a'
+    }) + '/a'
   for (const filter of [undefined, (e: Path) => e.name !== 'd']) {
     for (const walkFilter of [undefined, (e: Path) => e.name !== 'd']) {
       for (const follow of [false, undefined, true]) {
@@ -913,9 +914,7 @@ t.test('walking', async t => {
 
             t.test('iterateSync', async t => {
               if (!reuse) pw = new PathWalker(td)
-              const f = opts
-                ? pw.iterateSync('', opts)
-                : pw.iterateSync()
+              const f = opts ? pw.iterateSync('', opts) : pw.iterateSync()
               const found = new Set<Path>()
               for (const path of f) {
                 found.add(path)
@@ -970,9 +969,101 @@ t.test('walking', async t => {
               }
               t.same(found, paths)
             })
+
+            t.test('stream', async t => {
+              if (!reuse) pw = new PathWalker(td)
+              const found = new Set<Path>()
+              const stream = !opts ? pw.stream() : pw.stream('', opts)
+              stream.on('data', path => {
+                found.add(path)
+                if (reuse && !entries.has(path)) {
+                  t.fail('not foundin set: ' + path.fullpath())
+                }
+              })
+              await stream.promise()
+              t.same(found, entries)
+            })
+
+            t.test('stream, strings', async t => {
+              if (!reuse) pw = new PathWalker(td)
+              const found = new Set<string>()
+              const stream = pw.stream('', {
+                ...(opts || {}),
+                withFileTypes,
+              })
+              stream.on('data', path => {
+                found.add(path)
+                if (reuse && !paths.has(path)) {
+                  t.fail('not foundin set: ' + path)
+                }
+              })
+              await stream.promise()
+              t.same(found, paths)
+            })
+
+            t.test('streamSync', async t => {
+              if (!reuse) pw = new PathWalker(td)
+              const found = new Set<Path>()
+              const stream = !opts
+                ? pw.streamSync()
+                : pw.streamSync('', opts)
+              stream.on('data', path => {
+                found.add(path)
+                if (reuse && !entries.has(path)) {
+                  t.fail('not foundin set: ' + path.fullpath())
+                }
+              })
+              t.same(found, entries)
+            })
+
+            t.test('streamSync, strings', async t => {
+              if (!reuse) pw = new PathWalker(td)
+              const found = new Set<string>()
+              const stream = pw.streamSync('', {
+                ...(opts || {}),
+                withFileTypes,
+              })
+              stream.on('data', path => {
+                found.add(path)
+                if (reuse && !paths.has(path)) {
+                  t.fail('not foundin set: ' + path)
+                }
+              })
+              t.same(found, paths)
+            })
           })
         }
       }
     }
   }
+})
+
+t.test('cached methods', t => {
+  const td = t.testdir({
+    dir: {
+      file: '',
+    },
+    link: t.fixture('symlink', 'dir/file'),
+  })
+  const pw = new PathWalker(td)
+  const dir = pw.cwd.resolve('dir')
+  const file = pw.cwd.resolve('dir/file')
+  const noent = pw.cwd.resolve('dir/nope')
+  const link = pw.cwd.resolve('link')
+  t.same(dir.readdirCached(), [], 'has not called readdir')
+  t.same(dir.readdirSync(), [file])
+  t.same(dir.readdirCached(), [file])
+  t.equal(link.readlinkCached(), undefined)
+  t.equal(link.readlinkSync(), file)
+  t.equal(link.readlinkCached(), file)
+  t.equal(link.realpathCached(), undefined)
+  t.equal(link.realpathSync(), file)
+  t.equal(link.realpathCached(), file)
+  t.equal(link.lstatCached(), undefined)
+  t.equal(link.lstatSync(), link)
+  t.equal(link.lstatCached(), link)
+  t.equal(noent.lstatCached(), undefined)
+  t.equal(noent.lstatSync(), undefined)
+  t.equal(noent.lstatCached(), undefined)
+  t.end()
 })

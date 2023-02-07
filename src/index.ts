@@ -38,16 +38,18 @@ const IFMT = 0b1111
 const IFMT_UNKNOWN = ~IFMT
 // set after successfully calling readdir() and getting entries.
 const READDIR_CALLED = 0b0001_0000
+// set after a successful lstat()
+const LSTAT_CALLED = 0b0010_0000
 // set if an entry (or one of its parents) is definitely not a dir
-const ENOTDIR = 0b0010_0000
+const ENOTDIR = 0b0100_0000
 // set if an entry (or one of its parents) does not exist
 // (can also be set on lstat errors like EACCES or ENAMETOOLONG)
-const ENOENT = 0b0100_0000
+const ENOENT = 0b1000_0000
 // cannot have child entries -- also verify &IFMT is either IFDIR or IFLNK
 // set if we fail to readlink
-const ENOREADLINK = 0b1000_0000
+const ENOREADLINK = 0b0001_0000_0000
 // set if we know realpath() will fail
-const ENOREALPATH = 0b0001_0000_0000
+const ENOREALPATH = 0b0010_0000_0000
 
 const ENOCHILD = ENOTDIR | ENOENT | ENOREALPATH
 const TYPEMASK = 0b1_1111_1111
@@ -195,7 +197,6 @@ export abstract class PathBase implements Dirent {
     opts: PathOpts
   ) {
     this.name = name
-
     this.#matchName = nocase ? name.toLowerCase() : name
     this.#type = type & TYPEMASK
     this.nocase = nocase
@@ -397,11 +398,36 @@ export abstract class PathBase implements Dirent {
   }
 
   /**
-   * Return the cached link target if the entry has been the subject
-   * of a successful readlink, or undefined otherwise.
+   * Return the entry if it has been subject of a successful lstat, or
+   * undefined otherwise.
    */
-  readlinkCached() {
+  lstatCached(): PathBase | undefined {
+    return this.#type & LSTAT_CALLED ? this : undefined
+  }
+
+  /**
+   * Return the cached link target if the entry has been the subject of a
+   * successful readlink, or undefined otherwise.
+   */
+  readlinkCached(): PathBase | undefined {
     return this.#linkTarget
+  }
+
+  /**
+   * Returns the cached realpath target if the entry has been the subject
+   * of a successful realpath, or undefined otherwise.
+   */
+  realpathCached(): PathBase | undefined {
+    return this.#realpath
+  }
+
+  /**
+   * Returns the cached child Path entries array if the entry has been the
+   * subject of a successful readdir(), or [] otherwise.
+   */
+  readdirCached(): PathBase[] {
+    const children = this.children()
+    return children.slice(0, children.provisional)
   }
 
   /**
@@ -650,7 +676,8 @@ export abstract class PathBase implements Dirent {
         // retain any other flags, but set the ifmt
         this.#type =
           (this.#type & IFMT_UNKNOWN) |
-          entToType(await lstat(this.fullpath()))
+          entToType(await lstat(this.fullpath())) |
+          LSTAT_CALLED
         return this
       } catch (er) {
         this.#lstatFail((er as NodeJS.ErrnoException).code)
@@ -667,7 +694,8 @@ export abstract class PathBase implements Dirent {
         // retain any other flags, but set the ifmt
         this.#type =
           (this.#type & IFMT_UNKNOWN) |
-          entToType(lstatSync(this.fullpath()))
+          entToType(lstatSync(this.fullpath())) |
+          LSTAT_CALLED
         return this
       } catch (er) {
         this.#lstatFail((er as NodeJS.ErrnoException).code)
@@ -800,17 +828,12 @@ export abstract class PathBase implements Dirent {
     dirs: Set<PathBase | undefined>,
     walkFilter?: (e: PathBase) => boolean
   ): boolean {
-    return (this.#type & IFDIR) === IFDIR &&
+    return (
+      (this.#type & IFDIR) === IFDIR &&
       !(this.#type & ENOCHILD) &&
       !dirs.has(this) &&
       (!walkFilter || walkFilter(this))
-  }
-
-  /**
-   * internal
-   */
-  realpathCached(): PathBase | undefined {
-    return this.#realpath
+    )
   }
 
   /**
@@ -1059,7 +1082,8 @@ export abstract class PathWalkerBase {
    *
    * Defaults true on Darwin and Windows systems, false elsewhere.
    */
-  abstract nocase: boolean
+  nocase: boolean
+
   /**
    * The path separator used for parsing paths
    *
@@ -1078,7 +1102,7 @@ export abstract class PathWalkerBase {
     cwd: string = process.cwd(),
     pathImpl: typeof win32 | typeof posix,
     sep: string | RegExp,
-    { childrenCacheSize = 16 * 1024 }: PathWalkerOpts = {}
+    { nocase, childrenCacheSize = 16 * 1024 }: PathWalkerOpts = {}
   ) {
     // resolve and split root, and then add to the store.
     // this is the only time we call path.resolve()
@@ -1094,6 +1118,12 @@ export abstract class PathWalkerBase {
       split.pop()
     }
     // we can safely assume the root is a directory
+    if (nocase === undefined) {
+      throw new TypeError(
+        'must provide nocase setting to PathWalkerBase ctor'
+      )
+    }
+    this.nocase = nocase
     this.root = this.newRoot()
     this.roots[this.rootPath] = this.root
     let prev: PathBase = this.root
@@ -1927,17 +1957,13 @@ type WalkOptionsWithFileTypesFalse = WalkOptions & {
  */
 export class PathWalkerWin32 extends PathWalkerBase {
   /**
-   * Default case insensitive
-   */
-  nocase: boolean = true
-  /**
    * separator for generating path strings
    */
   sep: '\\' = '\\'
 
   constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
-    super(cwd, win32, '\\', opts)
-    const { nocase = this.nocase } = opts
+    const { nocase = true } = opts
+    super(cwd, win32, '\\', { ...opts, nocase })
     this.nocase = nocase
     for (let p: PathBase | undefined = this.cwd; p; p = p.parent) {
       p.nocase = this.nocase
@@ -1988,20 +2014,13 @@ export class PathWalkerWin32 extends PathWalkerBase {
  */
 export class PathWalkerPosix extends PathWalkerBase {
   /**
-   * Default case sensitive
-   */
-  nocase: boolean
-  /**
    * separator for generating path strings
    */
   sep: '/' = '/'
   constructor(cwd: string = process.cwd(), opts: PathWalkerOpts = {}) {
-    super(cwd, posix, '/', opts)
     const { nocase = false } = opts
+    super(cwd, posix, '/', { ...opts, nocase })
     this.nocase = nocase
-    for (let p: PathBase | undefined = this.cwd; p; p = p.parent) {
-      p.nocase = this.nocase
-    }
   }
 
   /**

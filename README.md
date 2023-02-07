@@ -25,7 +25,7 @@ folder tree, such that:
    means it has to track "provisional" child nodes that may not
    exist (and if we find that they _don't_ exist, store that
    information as well, so we don't have to ever check again).
-4. The API is not limited to use as a stream/iterator/etc.  There
+4. The API is not limited to use as a stream/iterator/etc. There
    are many cases where an API like node's `fs` is preferrable.
 5. It's more important to prevent excess syscalls than to be up
    to date, but it should be smart enough to know what it
@@ -122,7 +122,7 @@ zalgo:  1082.240  |  66689.936
 In this case, the speed improves by around 10-20x in the async
 case, 40x in the case of using `entry.readdirCB` with protections
 against synchronous callbacks, and 50-100x with callback
-deferrals disabled, and *several hundred times faster* for
+deferrals disabled, and _several hundred times faster_ for
 synchronous iteration.
 
 If you can think of a case that is not covered in these
