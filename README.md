@@ -132,15 +132,15 @@ synchronous iteration.
 If you can think of a case that is not covered in these
 benchmarks, or an implementation that performs significantly
 better than PathScurry, please [let me
-know](https://github.com/isaacs/path-walker/issues).
+know](https://github.com/isaacs/path-scurry/issues).
 
 ## USAGE
 
 ```ts
 // hybrid module, load with either method
-import { PathScurry, Path } from 'path-walker'
+import { PathScurry, Path } from 'path-scurry'
 // or:
-const { PathScurry, Path } = require('path-walker')
+const { PathScurry, Path } = require('path-scurry')
 
 // very simple example, say we want to find and
 // delete all the .DS_Store files in a given path
@@ -188,7 +188,7 @@ assert.equal(relativeDir, relative2)
 
 ## API
 
-[Full TypeDoc API](https://isaacs.github.io/path-walker)
+[Full TypeDoc API](https://isaacs.github.io/path-scurry)
 
 There are platform-specific classes exported, but for the most
 part, the default `PathScurry` and `Path` exports are what you
