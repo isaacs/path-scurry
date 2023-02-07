@@ -89,6 +89,7 @@ exports[`test/index.ts TAP walking follow=false, filter=false, walkFilter=false 
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
@@ -109,6 +110,7 @@ exports[`test/index.ts TAP walking follow=false, filter=false, walkFilter=false 
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
@@ -129,6 +131,7 @@ exports[`test/index.ts TAP walking follow=false, filter=false, walkFilter=true i
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
@@ -141,6 +144,7 @@ exports[`test/index.ts TAP walking follow=false, filter=false, walkFilter=true i
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
@@ -153,6 +157,7 @@ exports[`test/index.ts TAP walking follow=false, filter=true, walkFilter=false i
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/c",
@@ -171,6 +176,7 @@ exports[`test/index.ts TAP walking follow=false, filter=true, walkFilter=false i
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/c",
@@ -189,6 +195,7 @@ exports[`test/index.ts TAP walking follow=false, filter=true, walkFilter=true in
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/c",
@@ -199,6 +206,7 @@ exports[`test/index.ts TAP walking follow=false, filter=true, walkFilter=true in
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/c",
@@ -209,6 +217,7 @@ exports[`test/index.ts TAP walking follow=true, filter=false, walkFilter=false i
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/x/outside",
@@ -230,6 +239,7 @@ exports[`test/index.ts TAP walking follow=true, filter=false, walkFilter=false i
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/x/outside",
@@ -251,6 +261,7 @@ exports[`test/index.ts TAP walking follow=true, filter=false, walkFilter=true in
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/x/outside",
@@ -264,6 +275,7 @@ exports[`test/index.ts TAP walking follow=true, filter=false, walkFilter=true in
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/x/outside",
@@ -277,6 +289,7 @@ exports[`test/index.ts TAP walking follow=true, filter=true, walkFilter=false in
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/x/outside",
@@ -296,6 +309,7 @@ exports[`test/index.ts TAP walking follow=true, filter=true, walkFilter=false in
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/x/outside",
@@ -315,6 +329,7 @@ exports[`test/index.ts TAP walking follow=true, filter=true, walkFilter=true ini
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/x/outside",
@@ -326,6 +341,7 @@ exports[`test/index.ts TAP walking follow=true, filter=true, walkFilter=true ini
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/x/outside",
@@ -337,6 +353,7 @@ exports[`test/index.ts TAP walking follow=undefined, filter=false, walkFilter=fa
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
@@ -357,6 +374,7 @@ exports[`test/index.ts TAP walking follow=undefined, filter=false, walkFilter=fa
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
@@ -377,6 +395,7 @@ exports[`test/index.ts TAP walking follow=undefined, filter=false, walkFilter=tr
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
@@ -389,6 +408,7 @@ exports[`test/index.ts TAP walking follow=undefined, filter=false, walkFilter=tr
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/d",
@@ -401,6 +421,7 @@ exports[`test/index.ts TAP walking follow=undefined, filter=true, walkFilter=fal
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/c",
@@ -419,6 +440,7 @@ exports[`test/index.ts TAP walking follow=undefined, filter=true, walkFilter=fal
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/c",
@@ -437,6 +459,7 @@ exports[`test/index.ts TAP walking follow=undefined, filter=true, walkFilter=tru
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/c",
@@ -447,6 +470,7 @@ exports[`test/index.ts TAP walking follow=undefined, filter=true, walkFilter=tru
 Set {
   "{CWD}/test/tap-testdir-index-walking/a",
   "{CWD}/test/tap-testdir-index-walking/a/x",
+  "{CWD}/test/tap-testdir-index-walking/a/empty",
   "{CWD}/test/tap-testdir-index-walking/a/deeplink",
   "{CWD}/test/tap-testdir-index-walking/a/b",
   "{CWD}/test/tap-testdir-index-walking/a/b/c",

@@ -36,15 +36,16 @@ const IFMT = 0b1111
 
 // mask to unset low 4 bits
 const IFMT_UNKNOWN = ~IFMT
+
 // set after successfully calling readdir() and getting entries.
-const READDIR_CALLED = 0b0001_0000
+const READDIR_CALLED = 0b0000_0001_0000
 // set after a successful lstat()
-const LSTAT_CALLED = 0b0010_0000
+const LSTAT_CALLED = 0b0000_0010_0000
 // set if an entry (or one of its parents) is definitely not a dir
-const ENOTDIR = 0b0100_0000
+const ENOTDIR = 0b0000_0100_0000
 // set if an entry (or one of its parents) does not exist
 // (can also be set on lstat errors like EACCES or ENAMETOOLONG)
-const ENOENT = 0b1000_0000
+const ENOENT = 0b0000_1000_0000
 // cannot have child entries -- also verify &IFMT is either IFDIR or IFLNK
 // set if we fail to readlink
 const ENOREADLINK = 0b0001_0000_0000
@@ -52,7 +53,7 @@ const ENOREADLINK = 0b0001_0000_0000
 const ENOREALPATH = 0b0010_0000_0000
 
 const ENOCHILD = ENOTDIR | ENOENT | ENOREALPATH
-const TYPEMASK = 0b1_1111_1111
+const TYPEMASK = 0b0011_1111_1111
 
 const entToType = (s: Dirent | Stats) =>
   s.isFile()
@@ -534,7 +535,6 @@ export abstract class PathBase implements Dirent {
   }
 
   #markENOREALPATH() {
-    if (this.#type & ENOREALPATH) return
     this.#type |= ENOREALPATH
     this.#markENOTDIR()
   }
@@ -612,7 +612,7 @@ export abstract class PathBase implements Dirent {
     const type = entToType(e)
     const child = this.newChild(e.name, type, { parent: this })
     const ifmt = child.#type & IFMT
-    if (ifmt !== IFDIR && ifmt !== IFLNK) {
+    if (ifmt !== IFDIR && ifmt !== IFLNK && ifmt !== UNKNOWN) {
       child.#type |= ENOTDIR
     }
     c.unshift(child)
@@ -674,10 +674,11 @@ export abstract class PathBase implements Dirent {
     if ((this.#type & ENOENT) === 0) {
       try {
         // retain any other flags, but set the ifmt
-        this.#type =
-          (this.#type & IFMT_UNKNOWN) |
-          entToType(await lstat(this.fullpath())) |
-          LSTAT_CALLED
+        const ifmt = entToType(await lstat(this.fullpath()))
+        this.#type = (this.#type & IFMT_UNKNOWN) | ifmt | LSTAT_CALLED
+        if (ifmt !== UNKNOWN && ifmt !== IFDIR && ifmt !== IFLNK) {
+          this.#type |= ENOTDIR
+        }
         return this
       } catch (er) {
         this.#lstatFail((er as NodeJS.ErrnoException).code)
@@ -692,10 +693,11 @@ export abstract class PathBase implements Dirent {
     if ((this.#type & ENOENT) === 0) {
       try {
         // retain any other flags, but set the ifmt
-        this.#type =
-          (this.#type & IFMT_UNKNOWN) |
-          entToType(lstatSync(this.fullpath())) |
-          LSTAT_CALLED
+        const ifmt = entToType(lstatSync(this.fullpath()))
+        this.#type = (this.#type & IFMT_UNKNOWN) | ifmt | LSTAT_CALLED
+        if (ifmt !== UNKNOWN && ifmt !== IFDIR && ifmt !== IFLNK) {
+          this.#type |= ENOTDIR
+        }
         return this
       } catch (er) {
         this.#lstatFail((er as NodeJS.ErrnoException).code)
@@ -820,8 +822,13 @@ export abstract class PathBase implements Dirent {
   canReaddir() {
     if (this.#type & ENOCHILD) return false
     const ifmt = IFMT & this.#type
-    if (ifmt === UNKNOWN || ifmt === IFDIR || ifmt === IFLNK) return true
-    return false
+    // we always set ENOTDIR when setting IFMT, so should be impossible
+    /* c8 ignore start */
+    if (!(ifmt === UNKNOWN || ifmt === IFDIR || ifmt === IFLNK)) {
+      return false
+    }
+    /* c8 ignore stop */
+    return true
   }
 
   shouldWalk(
@@ -847,7 +854,7 @@ export abstract class PathBase implements Dirent {
    */
   async realpath(): Promise<PathBase | undefined> {
     if (this.#realpath) return this.#realpath
-    if ((ENOREALPATH | ENOREADLINK) & this.#type) return undefined
+    if ((ENOREALPATH | ENOREADLINK | ENOENT) & this.#type) return undefined
     try {
       const rp = await realpath(this.fullpath())
       return (this.#realpath = this.resolve(rp))
@@ -861,7 +868,7 @@ export abstract class PathBase implements Dirent {
    */
   realpathSync(): PathBase | undefined {
     if (this.#realpath) return this.#realpath
-    if ((ENOREALPATH | ENOREADLINK) & this.#type) return undefined
+    if ((ENOREALPATH | ENOREADLINK | ENOENT) & this.#type) return undefined
     try {
       const rp = realpathSync(this.fullpath())
       return (this.#realpath = this.resolve(rp))
@@ -1117,12 +1124,13 @@ export abstract class PathWalkerBase {
     if (split.length === 1 && !split[0]) {
       split.pop()
     }
-    // we can safely assume the root is a directory
+    /* c8 ignore start */
     if (nocase === undefined) {
       throw new TypeError(
         'must provide nocase setting to PathWalkerBase ctor'
       )
     }
+    /* c8 ignore stop */
     this.nocase = nocase
     this.root = this.newRoot()
     this.roots[this.rootPath] = this.root

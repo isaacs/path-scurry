@@ -290,12 +290,24 @@ t.test('readdir, simple basic', async t => {
       some: '',
       entries: '',
     },
+    link: t.fixture('symlink', 'dir/some'),
+    file1: '1',
+    file2: '2',
   })
   const pw = new PathWalker(td)
   t.match(
     new Set(await pw.readdir('dir')),
     new Set([{ name: 'some' }, { name: 'entries' }])
   )
+  // gut check
+  t.same(
+    [
+      pw.cwd.resolve('dir/some').isFile(),
+      pw.cwd.resolve('dir/entries').isFile(),
+    ],
+    [true, true]
+  )
+
   t.match(
     new Set(await pw.readdir('dir', { withFileTypes: false })),
     new Set(['some', 'entries'])
@@ -304,16 +316,107 @@ t.test('readdir, simple basic', async t => {
     new Set(pw.readdirSync('dir', { withFileTypes: false })),
     new Set(['some', 'entries'])
   )
-  t.same(pw.readdirSync('.', { withFileTypes: false }), ['dir'])
-  t.same(await pw.readdir('', { withFileTypes: false }), ['dir'])
+  t.same(
+    new Set(pw.readdirSync('.', { withFileTypes: false })),
+    new Set(['dir', 'link', 'file1', 'file2'])
+  )
+  t.same(
+    new Set(await pw.readdir('', { withFileTypes: false })),
+    new Set(['dir', 'link', 'file1', 'file2'])
+  )
+  t.same(pw.cwd.resolve('link').readdirSync(), [])
+  t.same(pw.cwd.resolve('file1').readdirSync(), [])
+  t.same(await pw.cwd.resolve('file2').readdir(), [])
+
   for (const e of pw.readdirSync('dir')) {
     t.equal(e.isFile(), true)
     t.equal(e.isSymbolicLink(), false)
     t.same(pw.readdirSync(e), [])
     t.same(await pw.readdir(e), [])
   }
+
   t.same(await pw.readdir('enoent'), [])
   t.same(pw.readdirSync('also/enoent'), [])
+  t.test('readdirCB', async t => {
+    t.test('cached, basic', t => {
+      const dir = pw.cwd.resolve('dir')
+      let sync = true
+      dir.readdirCB((er, entries) => {
+        t.equal(er, null)
+        t.match(
+          new Set(entries),
+          new Set([{ name: 'some' }, { name: 'entries' }])
+        )
+        t.equal(sync, false, 'did not call cb synchronously')
+        t.end()
+      })
+      sync = false
+    })
+    t.test('cached, zalgo', t => {
+      const dir = pw.cwd.resolve('dir')
+      let sync = true
+      dir.readdirCB((er, entries) => {
+        t.equal(er, null)
+        t.match(
+          new Set(entries),
+          new Set([{ name: 'some' }, { name: 'entries' }])
+        )
+        t.equal(sync, true, 'called cb synchronously')
+        t.end()
+      }, true)
+      sync = false
+    })
+    t.test('file', t => {
+      let sync = true
+      pw.cwd.resolve('dir/some').readdirCB((er, entries) => {
+        t.equal(er, null)
+        t.same(entries, [])
+        t.equal(sync, false)
+        t.end()
+      })
+      sync = false
+    })
+    t.test('file, zalgo', t => {
+      let sync = true
+      pw.cwd.resolve('dir/some').readdirCB((er, entries) => {
+        t.equal(er, null)
+        t.same(entries, [])
+        t.equal(sync, true)
+        t.end()
+      }, true)
+      sync = false
+    })
+    t.test('noent', t => {
+      let sync = true
+      pw.cwd.resolve('noent').readdirCB((er, entries) => {
+        t.equal(er, null)
+        t.equal(sync, false)
+        t.same(entries, [])
+        t.end()
+      })
+      sync = false
+    })
+    t.test('noent again (cached failure)', t => {
+      let sync = true
+      pw.cwd.resolve('noent').readdirCB((er, entries) => {
+        t.equal(er, null)
+        t.equal(sync, false)
+        t.same(entries, [])
+        t.end()
+      })
+      sync = false
+    })
+    t.test('noent again, zalgo (cached failure)', t => {
+      let sync = true
+      pw.cwd.resolve('noent').readdirCB((er, entries) => {
+        t.equal(er, null)
+        t.equal(sync, true)
+        t.same(entries, [])
+        t.end()
+      }, true)
+      sync = false
+    })
+  })
 })
 
 t.test('readdir with provisionals', async t => {
@@ -595,6 +698,20 @@ t.test('all the IFMTs!', async t => {
     fifo: 'fifo',
     nope: 'nope',
   })
+  const canReaddir = {
+    // of course dirs are worth a shot
+    dir: true,
+    // might be a symlink to a directory
+    link: true,
+    // unknown, worth trying to read it
+    nope: true,
+
+    file: false,
+    chr: false,
+    blk: false,
+    sock: false,
+    fifo: false,
+  }
 
   const mockFsPromises = {
     ...fsp,
@@ -614,9 +731,13 @@ t.test('all the IFMTs!', async t => {
     'fs/promises': mockFsPromises,
   })
 
-  const entries = new PathWalker(td).readdirSync()
+  const pw = new PathWalker(td)
+  t.equal(pw.cwd.resolve('noent').canReaddir(), true)
+  t.equal(pw.cwd.resolve('file').lstatSync()?.canReaddir(), false)
+  const entries = pw.readdirSync()
   for (const e of entries) {
-    const b = e.name
+    const b = e.name as keyof typeof canReaddir
+    t.equal(e.canReaddir(), canReaddir[b], `${b}.canReaddir`)
     switch (b) {
       case 'file':
         onlyOne(t, e, 'isFile')
@@ -747,8 +868,10 @@ t.test('eloop', async t => {
   let asyncResults: { [k: string]: string | undefined } = {}
   t.test('sync', t => {
     const pw = new PathWalker(td)
+    // readlink on a noent is
     for (const p of paths) {
       syncResults[p] = pw.realpathSync(p)
+      t.equal(pw.cwd.resolve(p).realpathSync()?.fullpath(), syncResults[p])
     }
     t.matchSnapshot(syncResults)
     const sr2: typeof syncResults = {}
@@ -794,6 +917,7 @@ t.test('walking', async t => {
       a: {
         x: t.fixture('symlink', '../y'),
         deeplink: t.fixture('symlink', 'b/c/d'),
+        empty: {},
         b: {
           c: {
             d: {
