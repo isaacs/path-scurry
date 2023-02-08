@@ -38,8 +38,6 @@ jobs:
         run: npm install
       - name: Generate typedocs
         run: npm run typedoc
-      - name: Run benchmarks
-        run: npm run bench 2>&1 | tee ./docs/benchmarks.txt
       - name: Setup Pages
         uses: actions/configure-pages@v3
       - name: Upload artifact
