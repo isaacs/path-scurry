@@ -1000,8 +1000,8 @@ t.test('walking', async t => {
               // walk to get the entries, to cover that code path.
               const syncWalk = opts
                 ? optFirst
-                  ? pw.walkSync(opts)
-                  : pw.walkSync('', opts)
+                  ? pw.walkSync({ ...opts, withFileTypes: true })
+                  : pw.walkSync('', { ...opts, withFileTypes: true })
                 : pw.walkSync()
               const entries = new Set<PathBase>()
               const paths = new Set<string>()
@@ -1032,8 +1032,8 @@ t.test('walking', async t => {
                 if (!reuse) pw = new PathScurry(td)
                 const w = opts
                   ? optFirst
-                    ? pw.walk(opts)
-                    : pw.walk('', opts)
+                    ? pw.walk({ ...opts, withFileTypes: true })
+                    : pw.walk('', { ...opts, withFileTypes: true })
                   : pw.walk()
                 const found = new Set<Path>()
                 for (const path of await w) {
@@ -1089,8 +1089,8 @@ t.test('walking', async t => {
                 if (!reuse) pw = new PathScurry(td)
                 const f = opts
                   ? optFirst
-                    ? pw.iterateSync(opts)
-                    : pw.iterateSync('', opts)
+                    ? pw.iterateSync({ ...opts, withFileTypes: true })
+                    : pw.iterateSync('', { ...opts, withFileTypes: true })
                   : pw.iterateSync()
                 const found = new Set<Path>()
                 for (const path of f) {
@@ -1120,8 +1120,8 @@ t.test('walking', async t => {
                 if (!reuse) pw = new PathScurry(td)
                 const f = opts
                   ? optFirst
-                    ? pw.iterate(opts)
-                    : pw.iterate('', opts)
+                    ? pw.iterate({ ...opts, withFileTypes: true })
+                    : pw.iterate('', { ...opts, withFileTypes: true })
                   : pw.iterate()
                 let found = new Set<Path>()
                 for await (const path of f) {
@@ -1156,8 +1156,8 @@ t.test('walking', async t => {
                 const found = new Set<Path>()
                 const stream = opts
                   ? optFirst
-                    ? pw.stream(opts)
-                    : pw.stream('', opts)
+                    ? pw.stream({ ...opts, withFileTypes: true })
+                    : pw.stream('', { ...opts, withFileTypes: true })
                   : pw.stream()
                 stream.on('data', path => {
                   found.add(path)
@@ -1191,8 +1191,8 @@ t.test('walking', async t => {
                 const found = new Set<Path>()
                 const stream = opts
                   ? optFirst
-                    ? pw.streamSync(opts)
-                    : pw.streamSync('', opts)
+                    ? pw.streamSync({ ...opts, withFileTypes: true })
+                    : pw.streamSync('', { ...opts, withFileTypes: true })
                   : pw.streamSync()
                 stream.on('data', path => {
                   found.add(path)

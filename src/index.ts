@@ -2082,10 +2082,9 @@ export interface WalkOptions {
   walkFilter?: (entry: PathBase) => boolean
 }
 
-export type WalkOptionsWithFileTypesUnset = Pick<
-  WalkOptions,
-  Exclude<keyof WalkOptions, 'withFileTypes'>
->
+export type WalkOptionsWithFileTypesUnset = WalkOptions & {
+  withFileTypes?: undefined
+}
 export type WalkOptionsWithFileTypesTrue = WalkOptions & {
   withFileTypes: true
 }
