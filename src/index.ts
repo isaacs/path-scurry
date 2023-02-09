@@ -77,6 +77,7 @@ const entToType = (s: Dirent | Stats) =>
  */
 export interface PathOpts {
   fullpath?: string
+  relative?: string
   parent?: PathBase
 }
 
@@ -177,6 +178,7 @@ export abstract class PathBase implements Dirent {
 
   #matchName: string
   #fullpath?: string
+  #relative?: string
   #type: number
   #children: ChildrenCache
   #linkTarget?: PathBase
@@ -204,7 +206,9 @@ export abstract class PathBase implements Dirent {
     this.roots = roots
     this.root = root || this
     this.#children = children
-    Object.assign(this, opts)
+    this.#fullpath = opts.fullpath
+    this.#relative = opts.relative
+    this.parent = opts.parent
   }
 
   /**
@@ -283,7 +287,7 @@ export abstract class PathBase implements Dirent {
    *
    * @internal
    */
-  child(pathPart: string): PathBase {
+  child(pathPart: string, opts?: PathOpts): PathBase {
     if (pathPart === '' || pathPart === '.') {
       return this
     }
@@ -307,7 +311,7 @@ export abstract class PathBase implements Dirent {
     const fullpath = this.#fullpath
       ? this.#fullpath + s + pathPart
       : undefined
-    const pchild = this.newChild(pathPart, UNKNOWN)
+    const pchild = this.newChild(pathPart, UNKNOWN, opts)
     pchild.parent = this
     pchild.#fullpath = fullpath
 
@@ -319,6 +323,26 @@ export abstract class PathBase implements Dirent {
     // then provisional is set to children.length, otherwise a lower number
     children.push(pchild)
     return pchild
+  }
+
+  /**
+   * The relative path from the cwd. If it does not share an ancestor with
+   * the cwd, then this ends up being equivalent to the fullpath()
+   */
+  // TODO: instead of taking a param here, set it to '' in the constructor
+  // for the CWD, and set it to this.name for any roots.
+  relative(): string {
+    if (this.#relative !== undefined) {
+      return this.#relative
+    }
+    const name = this.name
+    const p = this.parent
+    if (!p) {
+      return (this.#relative = this.name)
+    }
+    const pv = p.relative()
+    const rp = pv + (!pv || !p.parent ? '' : this.sep) + name
+    return (this.#relative = rp)
   }
 
   /**
@@ -1150,8 +1174,16 @@ export abstract class PathScurryBase {
     this.root = this.newRoot()
     this.roots[this.rootPath] = this.root
     let prev: PathBase = this.root
+    let len = split.length - 1
+    const joinSep = pathImpl.sep
+    let abs = this.rootPath
+    let sawFirst = false
     for (const part of split) {
-      prev = prev.child(part)
+      prev = prev.child(part, {
+        relative: new Array(len--).fill('..').join(joinSep),
+        fullpath: (abs += (sawFirst ? '' : joinSep) + part),
+      })
+      sawFirst = true
     }
     this.cwd = prev
   }
@@ -1211,6 +1243,16 @@ export abstract class PathScurryBase {
     const result = this.cwd.resolve(r).fullpath()
     this.#resolveCache.set(r, result)
     return result
+  }
+
+  /**
+   * find the relative path from the cwd to the supplied path string or entry
+   */
+  relative(entry: PathBase | string = this.cwd): string {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    return entry.relative()
   }
 
   /**

@@ -330,6 +330,14 @@ To get a `Path` object resolved from the `PathScurry`, use
 `pw.cwd.resolve(path)`. Note that `Path.resolve` only takes a
 single string argument, not multiple.
 
+#### `pw.relative(path: string | Path): string`
+
+Return the relative path from the PathWalker cwd to the supplied
+path string or entry.
+
+If the nearest common ancestor is the root, then an absolute path
+is returned.
+
 #### `pw.basename(path: string | Path): string`
 
 Return the basename of the provided string or Path.
@@ -450,6 +458,14 @@ when the path is known to not exist.
 
 Return a `Path` object associated with the provided path string
 as resolved from the current Path object.
+
+#### `path.relative(): string`
+
+Return the relative path from the PathWalker cwd to the supplied
+path string or entry.
+
+If the nearest common ancestor is the root, then an absolute path
+is returned.
 
 #### `async path.readdir()`
 
