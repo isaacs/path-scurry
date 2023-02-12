@@ -235,6 +235,7 @@ t.test('readlink', async t => {
 
   // a nested thing, and then we have to mark its parent as enoent
   t.equal(pw.lstatSync('nope/a/b/c/d/e/f'), undefined)
+  t.equal(pw.cwd.resolve('nope/a/b/c/d/e/f').isENOENT(), true)
   t.equal(pw.cwd.resolve('nope').isUnknown(), true)
   t.equal(pw.lstatSync('nope'), undefined)
   t.end()
@@ -1248,8 +1249,10 @@ t.test('cached methods', t => {
   t.same(dir.readdirSync(), [file])
   t.same(dir.readdirCached(), [file])
   t.equal(link.readlinkCached(), undefined)
+  t.equal(link.canReadlink(), true)
   t.equal(link.readlinkSync(), file)
   t.equal(link.readlinkCached(), file)
+  t.equal(link.canReadlink(), true)
   t.equal(link.realpathCached(), undefined)
   t.equal(link.realpathSync(), file)
   t.equal(link.realpathCached(), file)

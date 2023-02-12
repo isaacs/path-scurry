@@ -471,6 +471,42 @@ export abstract class PathBase implements Dirent {
   }
 
   /**
+   * Return true if it's worth trying to readlink.  Ie, we don't (yet) have
+   * any indication that readlink will definitely fail.
+   *
+   * Returns false if the path is known to not be a symlink, if a previous
+   * readlink failed, or if the entry does not exist.
+   */
+  canReadlink(): boolean {
+    if (this.#linkTarget) return true
+    if (!this.parent) return false
+    // cases where it cannot possibly succeed
+    const ifmt = this.#type & IFMT
+    return !(
+      (ifmt !== UNKNOWN && ifmt !== IFLNK) ||
+      this.#type & ENOREADLINK ||
+      this.#type & ENOENT
+    )
+  }
+
+  /**
+   * Return true if readdir has previously been successfully called on this
+   * path, indicating that cachedReaddir() is likely valid.
+   */
+  calledReaddir(): boolean {
+    return !!(this.#type & READDIR_CALLED)
+  }
+
+  /**
+   * Returns true if the path is known to not exist. That is, a previous lstat
+   * or readdir failed to verify its existence when that would have been
+   * expected, or a parent entry was marked either enoent or enotdir.
+   */
+  isENOENT(): boolean {
+    return !!(this.#type & ENOENT)
+  }
+
+  /**
    * Return the Path object corresponding to the target of a symbolic link.
    *
    * If the Path is not a symbolic link, or if the readlink call fails for any
@@ -483,11 +519,11 @@ export abstract class PathBase implements Dirent {
     if (target) {
       return target
     }
-    if (this.#cannotReadlink()) {
+    if (!this.canReadlink()) {
       return undefined
     }
     /* c8 ignore start */
-    // already covered by the cannotReadlink test, here for ts grumples
+    // already covered by the canReadlink test, here for ts grumples
     if (!this.parent) {
       return undefined
     }
@@ -512,11 +548,11 @@ export abstract class PathBase implements Dirent {
     if (target) {
       return target
     }
-    if (this.#cannotReadlink()) {
+    if (!this.canReadlink()) {
       return undefined
     }
     /* c8 ignore start */
-    // already covered by the cannotReadlink test, here for ts grumples
+    // already covered by the canReadlink test, here for ts grumples
     if (!this.parent) {
       return undefined
     }
@@ -531,21 +567,6 @@ export abstract class PathBase implements Dirent {
       this.#readlinkFail((er as NodeJS.ErrnoException).code)
       return undefined
     }
-  }
-
-  #cannotReadlink(): boolean {
-    if (!this.parent) return true
-    // cases where it cannot possibly succeed
-    const ifmt = this.#type & IFMT
-    return (
-      !!(ifmt !== UNKNOWN && ifmt !== IFLNK) ||
-      !!(this.#type & ENOREADLINK) ||
-      !!(this.#type & ENOENT)
-    )
-  }
-
-  #calledReaddir(): boolean {
-    return !!(this.#type & READDIR_CALLED)
   }
 
   #readdirSuccess(children: Children) {
@@ -771,7 +792,7 @@ export abstract class PathBase implements Dirent {
     }
 
     const children = this.children()
-    if (this.#calledReaddir()) {
+    if (this.calledReaddir()) {
       const c = children.slice(0, children.provisional)
       if (allowZalgo) cb(null, c)
       else queueMicrotask(() => cb(null, c))
@@ -811,7 +832,7 @@ export abstract class PathBase implements Dirent {
     }
 
     const children = this.children()
-    if (this.#calledReaddir()) {
+    if (this.calledReaddir()) {
       return children.slice(0, children.provisional)
     }
 
@@ -839,7 +860,7 @@ export abstract class PathBase implements Dirent {
     }
 
     const children = this.children()
-    if (this.#calledReaddir()) {
+    if (this.calledReaddir()) {
       return children.slice(0, children.provisional)
     }
 

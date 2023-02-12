@@ -82,7 +82,7 @@ With default settings on a folder tree of 100,000 items,
 consisting of around a 10-to-1 ratio of normal files to
 directories, PathScurry performs comparably to
 [@nodelib/fs.walk](http://npm.im/@nodelib/fs.walk), which is the
-fastest and most reliable file system walker I could find.  As
+fastest and most reliable file system walker I could find. As
 far as I can tell, it's almost impossible to go much faster in a
 Node.js program, just based on how fast you can push syscalls out
 to the fs thread pool.
