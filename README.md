@@ -441,6 +441,24 @@ drive letter (in this case `'C:\\'`).
 
 Name of this file system entry.
 
+**Important**: *always* test the path name against any test
+string using the `isNamed` method, and not by directly comparing
+this string.  Otherwise, unicode path strings that the system
+sees as identical will not be properly treated as the same path,
+leading to incorrect behavior and possible security issues.
+
+#### `path.isNamed(s: string)`
+
+Return true if the path is a match for the given path name.  This
+handles case sensitivity and unicode normalization.
+
+Note: even on case-sensitive systems, it is **not** safe to test
+the equality of the `.name` property to determine whether a given
+pathname matches, due to unicode normalization mismatches.
+
+Always use this method instead of testing the `path.name`
+property directly.
+
 #### `path.fullpath()`
 
 The fully resolved path to the entry.

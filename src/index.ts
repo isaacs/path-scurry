@@ -72,6 +72,25 @@ const entToType = (s: Dirent | Stats) =>
     ? IFIFO
     : UNKNOWN
 
+// normalize unicode path names
+const normalizeCache = new Map<string, string>()
+const normalize = (s: string) => {
+  const c = normalizeCache.get(s)
+  if (c) return c
+  const n = s.normalize('NFKD')
+  normalizeCache.set(s, n)
+  return n
+}
+
+const normalizeNocaseCache = new Map<string, string>()
+const normalizeNocase = (s: string) => {
+  const c = normalizeNocaseCache.get(s)
+  if (c) return c
+  const n = normalize(s.toLowerCase())
+  normalizeNocaseCache.set(s, n)
+  return n
+}
+
 /**
  * Options that may be provided to the Path constructor
  */
@@ -140,6 +159,12 @@ export type Children = PathBase[] & { provisional: number }
 export abstract class PathBase implements Dirent {
   /**
    * the basename of this path
+   *
+   * **Important**: *always* test the path name against any test string
+   * usingthe {@link isNamed} method, and not by directly comparing this
+   * string. Otherwise, unicode path strings that the system sees as identical
+   * will not be properly treated as the same path, leading to incorrect
+   * behavior and possible security issues.
    */
   name: string
   /**
@@ -200,7 +225,7 @@ export abstract class PathBase implements Dirent {
     opts: PathOpts
   ) {
     this.name = name
-    this.#matchName = nocase ? name.toLowerCase() : name
+    this.#matchName = nocase ? normalizeNocase(name) : normalize(name)
     this.#type = type & TYPEMASK
     this.nocase = nocase
     this.roots = roots
@@ -297,7 +322,9 @@ export abstract class PathBase implements Dirent {
 
     // find the child
     const children = this.children()
-    const name = this.nocase ? pathPart.toLowerCase() : pathPart
+    const name = this.nocase
+      ? normalizeNocase(pathPart)
+      : normalize(pathPart)
     for (const p of children) {
       if (p.#matchName === name) {
         return p
@@ -507,6 +534,23 @@ export abstract class PathBase implements Dirent {
   }
 
   /**
+   * Return true if the path is a match for the given path name.  This handles
+   * case sensitivity and unicode normalization.
+   *
+   * Note: even on case-sensitive systems, it is **not** safe to test the
+   * equality of the `.name` property to determine whether a given pathname
+   * matches, due to unicode normalization mismatches.
+   *
+   * Always use this method instead of testing the `path.name` property
+   * directly.
+   */
+  isNamed(n: string): boolean {
+    return !this.nocase
+      ? this.#matchName === normalize(n)
+      : this.#matchName === normalizeNocase(n)
+  }
+
+  /**
    * Return the Path object corresponding to the target of a symbolic link.
    *
    * If the Path is not a symbolic link, or if the readlink call fails for any
@@ -683,7 +727,9 @@ export abstract class PathBase implements Dirent {
   #readdirMaybePromoteChild(e: Dirent, c: Children): PathBase | undefined {
     for (let p = c.provisional; p < c.length; p++) {
       const pchild = c[p]
-      const name = this.nocase ? e.name.toLowerCase() : e.name
+      const name = this.nocase
+        ? normalizeNocase(e.name)
+        : normalize(e.name)
       if (name !== pchild.#matchName) {
         continue
       }

@@ -1264,3 +1264,87 @@ t.test('cached methods', t => {
   t.equal(noent.lstatCached(), undefined)
   t.end()
 })
+
+t.test('normalizing unicode pathnames', t => {
+  // café
+  const cafe1 = Buffer.from([0x63, 0x61, 0x66, 0xc3, 0xa9]).toString()
+  // cafe with a `
+  const cafe2 = Buffer.from([
+    0x63, 0x61, 0x66, 0x65, 0xcc, 0x81,
+  ]).toString()
+  // CAFÉ
+  const cafe1u = Buffer.from([0x63, 0x61, 0x66, 0xc3, 0xa9])
+    .toString()
+    .toUpperCase()
+  // CAFE with a `
+  const cafe2u = Buffer.from([0x63, 0x61, 0x66, 0x65, 0xcc, 0x81])
+    .toString()
+    .toUpperCase()
+
+  t.test('nocase: true', t => {
+    const nc = new PathScurry('', { nocase: true })
+    const cafe1c = nc.cwd.child(cafe1)
+    const cafe2c = nc.cwd.child(cafe2)
+    const cafe1uc = nc.cwd.child(cafe1u)
+    const cafe2uc = nc.cwd.child(cafe2u)
+
+    t.equal(cafe1c, cafe2c)
+    t.equal(cafe1c, cafe1uc)
+    t.equal(cafe1c, cafe2uc)
+
+    t.equal(cafe1c.isNamed(cafe1), true)
+    t.equal(cafe1c.isNamed(cafe2), true)
+    t.equal(cafe1c.isNamed(cafe1u), true)
+    t.equal(cafe1c.isNamed(cafe2u), true)
+    t.equal(cafe2c.isNamed(cafe1), true)
+    t.equal(cafe2c.isNamed(cafe2), true)
+    t.equal(cafe2c.isNamed(cafe1u), true)
+    t.equal(cafe2c.isNamed(cafe2u), true)
+    t.equal(cafe1uc.isNamed(cafe1), true)
+    t.equal(cafe1uc.isNamed(cafe2), true)
+    t.equal(cafe1uc.isNamed(cafe1u), true)
+    t.equal(cafe1uc.isNamed(cafe2u), true)
+    t.equal(cafe2uc.isNamed(cafe1), true)
+    t.equal(cafe2uc.isNamed(cafe2), true)
+    t.equal(cafe2uc.isNamed(cafe1u), true)
+    t.equal(cafe2uc.isNamed(cafe2u), true)
+
+    t.equal(nc.cwd.children().length, 1)
+    t.end()
+  })
+
+  t.test('nocase: false', t => {
+    const nc = new PathScurry('', { nocase: false })
+    const cafe1c = nc.cwd.child(cafe1)
+    const cafe2c = nc.cwd.child(cafe2)
+    const cafe1uc = nc.cwd.child(cafe1u)
+    const cafe2uc = nc.cwd.child(cafe2u)
+
+    t.equal(cafe1c, cafe2c)
+    t.equal(cafe1uc, cafe2uc)
+    t.not(cafe1c, cafe1uc)
+    t.not(cafe2c, cafe2uc)
+
+    t.equal(cafe1c.isNamed(cafe1), true)
+    t.equal(cafe1c.isNamed(cafe2), true)
+    t.equal(cafe1c.isNamed(cafe1u), false)
+    t.equal(cafe1c.isNamed(cafe2u), false)
+    t.equal(cafe2c.isNamed(cafe1), true)
+    t.equal(cafe2c.isNamed(cafe2), true)
+    t.equal(cafe2c.isNamed(cafe1u), false)
+    t.equal(cafe2c.isNamed(cafe2u), false)
+    t.equal(cafe1uc.isNamed(cafe1), false)
+    t.equal(cafe1uc.isNamed(cafe2), false)
+    t.equal(cafe1uc.isNamed(cafe1u), true)
+    t.equal(cafe1uc.isNamed(cafe2u), true)
+    t.equal(cafe2uc.isNamed(cafe1), false)
+    t.equal(cafe2uc.isNamed(cafe2), false)
+    t.equal(cafe2uc.isNamed(cafe1u), true)
+    t.equal(cafe2uc.isNamed(cafe2u), true)
+
+    t.equal(nc.cwd.children().length, 2)
+    t.end()
+  })
+
+  t.end()
+})
