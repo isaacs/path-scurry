@@ -811,6 +811,18 @@ export abstract class PathBase implements Dirent {
     }
   }
 
+  #onReaddirCB: ((
+    er: NodeJS.ErrnoException | null,
+    entries: Path[]
+  ) => any)[] = []
+  #readdirCBInFlight: boolean = false
+  #callOnReaddirCB(children: Path[]) {
+    this.#readdirCBInFlight = false
+    const cbs = this.#onReaddirCB.slice()
+    this.#onReaddirCB.length = 0
+    cbs.forEach(cb => cb(null, children))
+  }
+
   /**
    * Standard node-style callback interface to get list of directory entries.
    *
@@ -845,6 +857,13 @@ export abstract class PathBase implements Dirent {
       return
     }
 
+    // don't have to worry about zalgo at this point.
+    this.#onReaddirCB.push(cb)
+    if (this.#readdirCBInFlight) {
+      return
+    }
+    this.#readdirCBInFlight = true
+
     // else read the directory, fill up children
     // de-provisionalize any provisional children.
     const fullpath = this.fullpath()
@@ -858,10 +877,12 @@ export abstract class PathBase implements Dirent {
         }
         this.#readdirSuccess(children)
       }
-      cb(null, children.slice(0, children.provisional))
+      this.#callOnReaddirCB(children.slice(0, children.provisional))
       return
     })
   }
+
+  #asyncReaddirInFlight?: Promise<void>
 
   /**
    * Return an array of known child entries.
@@ -885,14 +906,26 @@ export abstract class PathBase implements Dirent {
     // else read the directory, fill up children
     // de-provisionalize any provisional children.
     const fullpath = this.fullpath()
-    try {
-      for (const e of await readdir(fullpath, { withFileTypes: true })) {
-        this.#readdirAddChild(e, children)
+    if (this.#asyncReaddirInFlight) {
+      await this.#asyncReaddirInFlight
+    } else {
+      /* c8 ignore start */
+      let resolve: () => void = () => {}
+      /* c8 ignore stop */
+      this.#asyncReaddirInFlight = new Promise<void>(
+        res => (resolve = res)
+      )
+      try {
+        for (const e of await readdir(fullpath, { withFileTypes: true })) {
+          this.#readdirAddChild(e, children)
+        }
+        this.#readdirSuccess(children)
+      } catch (er) {
+        this.#readdirFail((er as NodeJS.ErrnoException).code)
+        children.provisional = 0
       }
-      this.#readdirSuccess(children)
-    } catch (er) {
-      this.#readdirFail((er as NodeJS.ErrnoException).code)
-      children.provisional = 0
+      this.#asyncReaddirInFlight = undefined
+      resolve()
     }
     return children.slice(0, children.provisional)
   }

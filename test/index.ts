@@ -1348,3 +1348,48 @@ t.test('normalizing unicode pathnames', t => {
 
   t.end()
 })
+
+t.test('inflight readdirCB calls', t => {
+  const td: { [k: string]: {} } = {}
+  for (let i = 0; i < 100; i++) {
+    td[String(i)] = {}
+  }
+  const results: Set<string>[] = []
+  const ps = new PathScurry(t.testdir(td))
+  for (let i = 0; i < 100; i++) {
+    ps.cwd.readdirCB((er, res) => {
+      if (er) throw er
+      results.push(new Set(res.map(r => r.name)))
+      if (results.length === 100) next()
+    })
+  }
+  const next = () =>  {
+    t.equal(results[0].size, 100)
+    for (let i = 1; i < 100; i++) {
+      t.same(results[i], results[0])
+    }
+    t.end()
+  }
+})
+
+t.test('inflight async readdir calls', t => {
+  const td: { [k: string]: {} } = {}
+  for (let i = 0; i < 100; i++) {
+    td[String(i)] = {}
+  }
+  const results: Set<string>[] = []
+  const ps = new PathScurry(t.testdir(td))
+  for (let i = 0; i < 100; i++) {
+    ps.cwd.readdir().then((res) => {
+      results.push(new Set(res.map(r => r.name)))
+      if (results.length === 100) next()
+    })
+  }
+  const next = () =>  {
+    t.equal(results[0].size, 100)
+    for (let i = 1; i < 100; i++) {
+      t.same(results[i], results[0])
+    }
+    t.end()
+  }
+})
