@@ -1,6 +1,8 @@
 import LRUCache from 'lru-cache'
 import { posix, win32 } from 'path'
 
+import { fileURLToPath } from 'url'
+
 import {
   lstatSync,
   readdir as readdirCB,
@@ -1245,11 +1247,14 @@ export abstract class PathScurryBase {
    * @internal
    */
   constructor(
-    cwd: string = process.cwd(),
+    cwd: URL | string = process.cwd(),
     pathImpl: typeof win32 | typeof posix,
     sep: string | RegExp,
     { nocase, childrenCacheSize = 16 * 1024 }: PathScurryOpts = {}
   ) {
+    if (cwd instanceof URL || cwd.startsWith('file://')) {
+      cwd = fileURLToPath(cwd)
+    }
     // resolve and split root, and then add to the store.
     // this is the only time we call path.resolve()
     const cwdPath = pathImpl.resolve(cwd)
@@ -2246,7 +2251,7 @@ export class PathScurryWin32 extends PathScurryBase {
    */
   sep: '\\' = '\\'
 
-  constructor(cwd: string = process.cwd(), opts: PathScurryOpts = {}) {
+  constructor(cwd: URL | string = process.cwd(), opts: PathScurryOpts = {}) {
     const { nocase = true } = opts
     super(cwd, win32, '\\', { ...opts, nocase })
     this.nocase = nocase
@@ -2302,7 +2307,7 @@ export class PathScurryPosix extends PathScurryBase {
    * separator for generating path strings
    */
   sep: '/' = '/'
-  constructor(cwd: string = process.cwd(), opts: PathScurryOpts = {}) {
+  constructor(cwd: URL | string = process.cwd(), opts: PathScurryOpts = {}) {
     const { nocase = false } = opts
     super(cwd, posix, '/', { ...opts, nocase })
     this.nocase = nocase
@@ -2347,7 +2352,7 @@ export class PathScurryPosix extends PathScurryBase {
  * Uses {@link PathPosix} for Path objects.
  */
 export class PathScurryDarwin extends PathScurryPosix {
-  constructor(cwd: string = process.cwd(), opts: PathScurryOpts = {}) {
+  constructor(cwd: URL | string = process.cwd(), opts: PathScurryOpts = {}) {
     const { nocase = true } = opts
     super(cwd, { ...opts, nocase })
   }

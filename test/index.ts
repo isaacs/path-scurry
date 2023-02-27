@@ -4,6 +4,7 @@ import * as fsp from 'fs/promises'
 import { basename, resolve } from 'path'
 import { rimrafSync } from 'rimraf'
 import t from 'tap'
+import { pathToFileURL } from 'url'
 import { normalizePaths } from './fixtures/normalize-paths'
 
 import {
@@ -1392,4 +1393,16 @@ t.test('inflight async readdir calls', t => {
     }
     t.end()
   }
+})
+
+t.test('can use file url as cwd option', t => {
+  const fileURL = pathToFileURL(process.cwd())
+  const fileURLString = String(fileURL)
+  const ps = new PathScurry(process.cwd())
+  const pu = new PathScurry(fileURL)
+  const pus = new PathScurry(fileURLString)
+  t.equal(ps.cwd.fullpath(), process.cwd())
+  t.equal(pu.cwd.fullpath(), process.cwd())
+  t.equal(pus.cwd.fullpath(), process.cwd())
+  t.end()
 })
