@@ -204,6 +204,7 @@ export abstract class PathBase implements Dirent {
   abstract sep: string
 
   #matchName: string
+  #depth?: number
   #fullpath?: string
   #relative?: string
   #type: number
@@ -236,6 +237,17 @@ export abstract class PathBase implements Dirent {
     this.#fullpath = opts.fullpath
     this.#relative = opts.relative
     this.parent = opts.parent
+  }
+
+  /**
+   * Returns the depth of the Path object from its root.
+   *
+   * For example, a path at `/foo/bar` would have a depth of 2.
+   */
+  depth(): number {
+    if (this.#depth !== undefined) return this.#depth
+    if (!this.parent) return (this.#depth = 0)
+    return (this.#depth = this.parent.depth() + 1)
   }
 
   /**
@@ -1291,6 +1303,16 @@ export abstract class PathScurryBase {
       sawFirst = true
     }
     this.cwd = prev
+  }
+
+  /**
+   * Get the depth of a provided path, string, or the cwd
+   */
+  depth(path: Path | string = this.cwd): number {
+    if (typeof path === 'string') {
+      path = this.cwd.resolve(path)
+    }
+    return path.depth()
   }
 
   /**

@@ -1406,3 +1406,13 @@ t.test('can use file url as cwd option', t => {
   t.equal(pus.cwd.fullpath(), process.cwd())
   t.end()
 })
+
+t.test('depth', t => {
+  const ps = new PathScurry('/a/b/c/d')
+  t.equal(ps.depth(), 4)
+  t.equal(ps.depth('e/../g'), 5)
+  t.equal(ps.root.depth(), 0)
+  t.equal(ps.cwd.depth(), 4)
+  t.equal(ps.cwd.parent?.depth(), 3)
+  t.end()
+})

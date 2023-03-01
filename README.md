@@ -318,6 +318,13 @@ single tick if the stream is fully consumed.
 Path object representing the current working directory for the
 PathScurry.
 
+#### `pw.depth(path?: Path | string): number`
+
+Return the depth of the specified path (or the PathScurry cwd)
+within the directory tree.
+
+Root entries have a depth of `0`.
+
 #### `pw.resolve(...paths: string[])`
 
 Caching `path.resolve()`.
@@ -458,6 +465,11 @@ pathname matches, due to unicode normalization mismatches.
 
 Always use this method instead of testing the `path.name`
 property directly.
+
+#### `path.depth()`
+
+Return the depth of the Path entry within the directory tree.
+Root paths have a depth of `0`.
 
 #### `path.fullpath()`
 
