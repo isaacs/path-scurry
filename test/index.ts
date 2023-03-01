@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import { lstatSync, readdirSync, writeFileSync } from 'fs'
 import * as fsp from 'fs/promises'
+import { lstat } from 'fs/promises'
 import { basename, resolve } from 'path'
 import { rimrafSync } from 'rimraf'
 import t from 'tap'
@@ -8,6 +9,7 @@ import { pathToFileURL } from 'url'
 import { normalizePaths } from './fixtures/normalize-paths'
 
 import {
+  FSOption,
   Path,
   PathBase,
   PathPosix,
@@ -1050,7 +1052,7 @@ t.test('walking', async t => {
                     t.fail('not found in set: ' + path.fullpath())
                   }
                 }
-                t.same(found, entries)
+                t.match(found, entries)
               })
 
               t.test('async walk, strings', async t => {
@@ -1247,8 +1249,10 @@ t.test('cached methods', t => {
   const noent = pw.cwd.resolve('dir/nope')
   const link = pw.cwd.resolve('link')
   t.same(dir.readdirCached(), [], 'has not called readdir')
-  t.same(dir.readdirSync(), [file])
-  t.same(dir.readdirCached(), [file])
+  t.equal(dir.readdirSync().length, 1)
+  t.equal(dir.readdirSync()[0], file)
+  t.equal(dir.readdirCached().length, 1)
+  t.equal(dir.readdirCached()[0], file)
   t.equal(link.readlinkCached(), undefined)
   t.equal(link.canReadlink(), true)
   t.equal(link.readlinkSync(), file)
@@ -1364,7 +1368,7 @@ t.test('inflight readdirCB calls', t => {
       if (results.length === 100) next()
     })
   }
-  const next = () =>  {
+  const next = () => {
     t.equal(results[0].size, 100)
     for (let i = 1; i < 100; i++) {
       t.same(results[i], results[0])
@@ -1381,12 +1385,12 @@ t.test('inflight async readdir calls', t => {
   const results: Set<string>[] = []
   const ps = new PathScurry(t.testdir(td))
   for (let i = 0; i < 100; i++) {
-    ps.cwd.readdir().then((res) => {
+    ps.cwd.readdir().then(res => {
       results.push(new Set(res.map(r => r.name)))
       if (results.length === 100) next()
     })
   }
-  const next = () =>  {
+  const next = () => {
     t.equal(results[0].size, 100)
     for (let i = 1; i < 100; i++) {
       t.same(results[i], results[0])
@@ -1445,4 +1449,51 @@ t.test('lstat() fills out stat fields', async t => {
       t.equal(found, value, field)
     }
   }
+})
+
+t.test('custom FS override option', async t => {
+  let calledLstatSync = 0
+  let calledLstat = 0
+  const myfs: FSOption = {
+    lstatSync: (path: string) => {
+      calledLstatSync++
+      return lstatSync(path)
+    },
+    promises: {
+      lstat: async (path: string) => {
+        calledLstat++
+        return lstat(path)
+      },
+    },
+  }
+  const cwd = t.testdir({})
+
+  const psNoOption = new PathScurry(cwd)
+  psNoOption.lstatSync()
+  await psNoOption.lstat()
+  t.equal(calledLstat, 0)
+  t.equal(calledLstatSync, 0)
+
+  const psDefaultOption = new PathScurry(cwd, { fs })
+  psDefaultOption.lstatSync()
+  await psDefaultOption.lstat()
+  t.equal(calledLstat, 0)
+  t.equal(calledLstatSync, 0)
+
+  const psCustomFS = new PathScurry(cwd, { fs: myfs })
+  psCustomFS.lstatSync()
+  await psCustomFS.lstat()
+  t.equal(calledLstat, 1)
+  t.equal(calledLstatSync, 1)
+
+  const psCustomSync = new PathScurry(cwd, {
+    fs: {
+      ...myfs,
+      promises: undefined,
+    },
+  })
+  psCustomSync.lstatSync()
+  await psCustomSync.lstat()
+  t.equal(calledLstat, 1)
+  t.equal(calledLstatSync, 2)
 })

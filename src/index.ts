@@ -3,6 +3,7 @@ import { posix, win32 } from 'path'
 
 import { fileURLToPath } from 'url'
 
+import * as actualFS from 'fs'
 import {
   lstatSync,
   readdir as readdirCB,
@@ -15,8 +16,101 @@ const realpathSync = rps.native
 // since the promises one uses realpath.native
 import { lstat, readdir, readlink, realpath } from 'fs/promises'
 
-import { Dirent, Stats } from 'fs'
+import type { Dirent, Stats } from 'fs'
 import Minipass from 'minipass'
+
+/**
+ * An object that will be used to override the default `fs`
+ * methods.  Any methods that are not overridden will use Node's
+ * built-in implementations.
+ *
+ * - lstatSync
+ * - readdir (callback `withFileTypes` Dirent variant, used for
+ *   readdirCB and most walks)
+ * - readdirSync
+ * - readlinkSync
+ * - realpathSync
+ * - promises: Object containing the following async methods:
+ *   - lstat
+ *   - readdir (Dirent variant only)
+ *   - readlink
+ *   - realpath
+ */
+export interface FSOption {
+  lstatSync?: (path: string) => Stats
+  readdir?: (
+    path: string,
+    options: { withFileTypes: true },
+    cb: (er: NodeJS.ErrnoException | null, entries: Dirent[]) => any
+  ) => void
+  readdirSync?: (
+    path: string,
+    options: { withFileTypes: true }
+  ) => Dirent[]
+  readlinkSync?: (path: string) => string
+  realpathSync?: (path: string) => string
+  promises?: {
+    lstat?: (path: string) => Promise<Stats>
+    readdir?: (
+      path: string,
+      options: { withFileTypes: true }
+    ) => Promise<Dirent[]>
+    readlink?: (path: string) => Promise<string>
+    realpath?: (path: string) => Promise<string>
+    [k: string]: any
+  }
+  [k: string]: any
+}
+
+interface FSValue {
+  lstatSync: (path: string) => Stats
+  readdir: (
+    path: string,
+    options: { withFileTypes: true },
+    cb: (er: NodeJS.ErrnoException | null, entries: Dirent[]) => any
+  ) => void
+  readdirSync: (path: string, options: { withFileTypes: true }) => Dirent[]
+  readlinkSync: (path: string) => string
+  realpathSync: (path: string) => string
+  promises: {
+    lstat: (path: string) => Promise<Stats>
+    readdir: (
+      path: string,
+      options: { withFileTypes: true }
+    ) => Promise<Dirent[]>
+    readlink: (path: string) => Promise<string>
+    realpath: (path: string) => Promise<string>
+    [k: string]: any
+  }
+  [k: string]: any
+}
+
+const defaultFS: FSValue = {
+  lstatSync,
+  readdir: readdirCB,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+  promises: {
+    lstat,
+    readdir,
+    readlink,
+    realpath,
+  },
+}
+
+// if they just gave us require('fs') then use our default
+const fsFromOption = (fsOption?: FSOption): FSValue =>
+  !fsOption || fsOption === defaultFS || fsOption === actualFS
+    ? defaultFS
+    : {
+        ...defaultFS,
+        ...fsOption,
+        promises: {
+          ...defaultFS.promises,
+          ...(fsOption.promises || {}),
+        },
+      }
 
 // turn something like //?/c:/ into c:\
 const uncDriveRegexp = /^\\\\\?\\([a-z]:)\\?$/i
@@ -100,6 +194,10 @@ export interface PathOpts {
   fullpath?: string
   relative?: string
   parent?: PathBase
+  /**
+   * See {@link FSOption}
+   */
+  fs?: FSOption
 }
 
 /**
@@ -202,6 +300,9 @@ export abstract class PathBase implements Dirent {
    * The path separator string to use when joining paths
    */
   abstract sep: string
+
+  // potential default fs override
+  #fs: FSValue
 
   // Stats fields
   #dev?: number
@@ -311,6 +412,11 @@ export abstract class PathBase implements Dirent {
     this.#fullpath = opts.fullpath
     this.#relative = opts.relative
     this.parent = opts.parent
+    if (this.parent) {
+      this.#fs = this.parent.#fs
+    } else {
+      this.#fs = fsFromOption(opts.fs)
+    }
   }
 
   /**
@@ -426,9 +532,11 @@ export abstract class PathBase implements Dirent {
     const fullpath = this.#fullpath
       ? this.#fullpath + s + pathPart
       : undefined
-    const pchild = this.newChild(pathPart, UNKNOWN, opts)
-    pchild.parent = this
-    pchild.#fullpath = fullpath
+    const pchild = this.newChild(pathPart, UNKNOWN, {
+      ...opts,
+      parent: this,
+      fullpath,
+    })
 
     if (!this.canReaddir()) {
       pchild.#type |= ENOENT
@@ -661,7 +769,7 @@ export abstract class PathBase implements Dirent {
     }
     /* c8 ignore stop */
     try {
-      const read = await readlink(this.fullpath())
+      const read = await this.#fs.promises.readlink(this.fullpath())
       const linkTarget = this.parent.resolve(read)
       if (linkTarget) {
         return (this.#linkTarget = linkTarget)
@@ -690,7 +798,7 @@ export abstract class PathBase implements Dirent {
     }
     /* c8 ignore stop */
     try {
-      const read = readlinkSync(this.fullpath())
+      const read = this.#fs.readlinkSync(this.fullpath())
       const linkTarget = this.parent.resolve(read)
       if (linkTarget) {
         return (this.#linkTarget = linkTarget)
@@ -867,7 +975,7 @@ export abstract class PathBase implements Dirent {
   async lstat(): Promise<PathBase | undefined> {
     if ((this.#type & ENOENT) === 0) {
       try {
-        this.#applyStat(await lstat(this.fullpath()))
+        this.#applyStat(await this.#fs.promises.lstat(this.fullpath()))
         return this
       } catch (er) {
         this.#lstatFail((er as NodeJS.ErrnoException).code)
@@ -881,7 +989,7 @@ export abstract class PathBase implements Dirent {
   lstatSync(): PathBase | undefined {
     if ((this.#type & ENOENT) === 0) {
       try {
-        this.#applyStat(lstatSync(this.fullpath()))
+        this.#applyStat(this.#fs.lstatSync(this.fullpath()))
         return this
       } catch (er) {
         this.#lstatFail((er as NodeJS.ErrnoException).code)
@@ -992,7 +1100,7 @@ export abstract class PathBase implements Dirent {
     // else read the directory, fill up children
     // de-provisionalize any provisional children.
     const fullpath = this.fullpath()
-    readdirCB(fullpath, { withFileTypes: true }, (er, entries) => {
+    this.#fs.readdir(fullpath, { withFileTypes: true }, (er, entries) => {
       if (er) {
         this.#readdirFail((er as NodeJS.ErrnoException).code)
         children.provisional = 0
@@ -1041,7 +1149,9 @@ export abstract class PathBase implements Dirent {
         res => (resolve = res)
       )
       try {
-        for (const e of await readdir(fullpath, { withFileTypes: true })) {
+        for (const e of await this.#fs.promises.readdir(fullpath, {
+          withFileTypes: true,
+        })) {
           this.#readdirAddChild(e, children)
         }
         this.#readdirSuccess(children)
@@ -1072,7 +1182,9 @@ export abstract class PathBase implements Dirent {
     // de-provisionalize any provisional children.
     const fullpath = this.fullpath()
     try {
-      for (const e of readdirSync(fullpath, { withFileTypes: true })) {
+      for (const e of this.#fs.readdirSync(fullpath, {
+        withFileTypes: true,
+      })) {
         this.#readdirAddChild(e, children)
       }
       this.#readdirSuccess(children)
@@ -1120,7 +1232,7 @@ export abstract class PathBase implements Dirent {
     if (this.#realpath) return this.#realpath
     if ((ENOREALPATH | ENOREADLINK | ENOENT) & this.#type) return undefined
     try {
-      const rp = await realpath(this.fullpath())
+      const rp = await this.#fs.promises.realpath(this.fullpath())
       return (this.#realpath = this.resolve(rp))
     } catch (_) {
       this.#markENOREALPATH()
@@ -1134,7 +1246,7 @@ export abstract class PathBase implements Dirent {
     if (this.#realpath) return this.#realpath
     if ((ENOREALPATH | ENOREADLINK | ENOENT) & this.#type) return undefined
     try {
-      const rp = realpathSync(this.fullpath())
+      const rp = this.#fs.realpathSync(this.fullpath())
       return (this.#realpath = this.resolve(rp))
     } catch (_) {
       this.#markENOREALPATH()
@@ -1319,6 +1431,13 @@ export interface PathScurryOpts {
    * Default `16384`.
    */
   childrenCacheSize?: number
+  /**
+   * An object that overrides the built-in functions from the fs and
+   * fs/promises modules.
+   *
+   * See {@link FSOption}
+   */
+  fs?: FSOption
 }
 
 /**
@@ -1362,6 +1481,8 @@ export abstract class PathScurryBase {
    */
   abstract sep: string | RegExp
 
+  #fs: FSValue
+
   /**
    * This class should not be instantiated directly.
    *
@@ -1373,8 +1494,13 @@ export abstract class PathScurryBase {
     cwd: URL | string = process.cwd(),
     pathImpl: typeof win32 | typeof posix,
     sep: string | RegExp,
-    { nocase, childrenCacheSize = 16 * 1024 }: PathScurryOpts = {}
+    {
+      nocase,
+      childrenCacheSize = 16 * 1024,
+      fs = defaultFS,
+    }: PathScurryOpts = {}
   ) {
+    this.#fs = fsFromOption(fs)
     if (cwd instanceof URL || cwd.startsWith('file://')) {
       cwd = fileURLToPath(cwd)
     }
@@ -1399,7 +1525,7 @@ export abstract class PathScurryBase {
     }
     /* c8 ignore stop */
     this.nocase = nocase
-    this.root = this.newRoot()
+    this.root = this.newRoot(this.#fs)
     this.roots[this.rootPath] = this.root
     let prev: PathBase = this.root
     let len = split.length - 1
@@ -1437,7 +1563,7 @@ export abstract class PathScurryBase {
    *
    * @internal
    */
-  abstract newRoot(): PathBase
+  abstract newRoot(fs: FSValue): PathBase
   /**
    * Determine whether a given path string is absolute
    */
@@ -2409,7 +2535,7 @@ export class PathScurryWin32 extends PathScurryBase {
   /**
    * @internal
    */
-  newRoot() {
+  newRoot(fs: FSValue) {
     return new PathWin32(
       this.rootPath,
       IFDIR,
@@ -2417,7 +2543,7 @@ export class PathScurryWin32 extends PathScurryBase {
       this.roots,
       this.nocase,
       this.childrenCache(),
-      {}
+      { fs }
     )
   }
 
@@ -2462,7 +2588,7 @@ export class PathScurryPosix extends PathScurryBase {
   /**
    * @internal
    */
-  newRoot() {
+  newRoot(fs: FSValue) {
     return new PathPosix(
       this.rootPath,
       IFDIR,
@@ -2470,7 +2596,7 @@ export class PathScurryPosix extends PathScurryBase {
       this.roots,
       this.nocase,
       this.childrenCache(),
-      {}
+      { fs }
     )
   }
 

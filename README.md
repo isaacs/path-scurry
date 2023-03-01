@@ -233,6 +233,22 @@ constructor.
   operations, and _much_ slower than `path.resolve()` for
   repeated path resolution.
 
+- `fs` An object that will be used to override the default `fs`
+  methods.  Any methods that are not overridden will use Node's
+  built-in implementations.
+
+  - lstatSync
+  - readdir (callback `withFileTypes` Dirent variant, used for
+    readdirCB and most walks)
+  - readdirSync
+  - readlinkSync
+  - realpathSync
+  - promises: Object containing the following async methods:
+    - lstat
+    - readdir (Dirent variant only)
+    - readlink
+    - realpath
+
 ### Interface `WalkOptions`
 
 The options object that may be passed to all walk methods.
