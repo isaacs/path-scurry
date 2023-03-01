@@ -41,7 +41,7 @@ export interface FSOption {
   readdir?: (
     path: string,
     options: { withFileTypes: true },
-    cb: (er: NodeJS.ErrnoException | null, entries: Dirent[]) => any
+    cb: (er: NodeJS.ErrnoException | null, entries?: Dirent[]) => any
   ) => void
   readdirSync?: (
     path: string,
@@ -67,7 +67,7 @@ interface FSValue {
   readdir: (
     path: string,
     options: { withFileTypes: true },
-    cb: (er: NodeJS.ErrnoException | null, entries: Dirent[]) => any
+    cb: (er: NodeJS.ErrnoException | null, entries?: Dirent[]) => any
   ) => void
   readdirSync: (path: string, options: { withFileTypes: true }) => Dirent[]
   readlinkSync: (path: string) => string
@@ -1105,6 +1105,8 @@ export abstract class PathBase implements Dirent {
         this.#readdirFail((er as NodeJS.ErrnoException).code)
         children.provisional = 0
       } else {
+        // if we didn't get an error, we always get entries.
+        //@ts-ignore
         for (const e of entries) {
           this.#readdirAddChild(e, children)
         }
