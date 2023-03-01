@@ -203,6 +203,80 @@ export abstract class PathBase implements Dirent {
    */
   abstract sep: string
 
+  // Stats fields
+  #dev?: number
+  get dev() {
+    return this.#dev
+  }
+  #mode?: number
+  get mode() {
+    return this.#mode
+  }
+  #nlink?: number
+  get nlink() {
+    return this.#nlink
+  }
+  #uid?: number
+  get uid() {
+    return this.#uid
+  }
+  #gid?: number
+  get gid() {
+    return this.#gid
+  }
+  #rdev?: number
+  get rdev() {
+    return this.#rdev
+  }
+  #blksize?: number
+  get blksize() {
+    return this.#blksize
+  }
+  #ino?: number
+  get ino() {
+    return this.#ino
+  }
+  #size?: number
+  get size() {
+    return this.#size
+  }
+  #blocks?: number
+  get blocks() {
+    return this.#blocks
+  }
+  #atimeMs?: number
+  get atimeMs() {
+    return this.#atimeMs
+  }
+  #mtimeMs?: number
+  get mtimeMs() {
+    return this.#mtimeMs
+  }
+  #ctimeMs?: number
+  get ctimeMs() {
+    return this.#ctimeMs
+  }
+  #birthtimeMs?: number
+  get birthtimeMs() {
+    return this.#birthtimeMs
+  }
+  #atime?: Date
+  get atime() {
+    return this.#atime
+  }
+  #mtime?: Date
+  get mtime() {
+    return this.#mtime
+  }
+  #ctime?: Date
+  get ctime() {
+    return this.#ctime
+  }
+  #birthtime?: Date
+  get birthtime() {
+    return this.#birthtime
+  }
+
   #matchName: string
   #depth?: number
   #fullpath?: string
@@ -793,12 +867,7 @@ export abstract class PathBase implements Dirent {
   async lstat(): Promise<PathBase | undefined> {
     if ((this.#type & ENOENT) === 0) {
       try {
-        // retain any other flags, but set the ifmt
-        const ifmt = entToType(await lstat(this.fullpath()))
-        this.#type = (this.#type & IFMT_UNKNOWN) | ifmt | LSTAT_CALLED
-        if (ifmt !== UNKNOWN && ifmt !== IFDIR && ifmt !== IFLNK) {
-          this.#type |= ENOTDIR
-        }
+        this.#applyStat(await lstat(this.fullpath()))
         return this
       } catch (er) {
         this.#lstatFail((er as NodeJS.ErrnoException).code)
@@ -812,16 +881,58 @@ export abstract class PathBase implements Dirent {
   lstatSync(): PathBase | undefined {
     if ((this.#type & ENOENT) === 0) {
       try {
-        // retain any other flags, but set the ifmt
-        const ifmt = entToType(lstatSync(this.fullpath()))
-        this.#type = (this.#type & IFMT_UNKNOWN) | ifmt | LSTAT_CALLED
-        if (ifmt !== UNKNOWN && ifmt !== IFDIR && ifmt !== IFLNK) {
-          this.#type |= ENOTDIR
-        }
+        this.#applyStat(lstatSync(this.fullpath()))
         return this
       } catch (er) {
         this.#lstatFail((er as NodeJS.ErrnoException).code)
       }
+    }
+  }
+
+  #applyStat(st: Stats) {
+    const {
+      atime,
+      atimeMs,
+      birthtime,
+      birthtimeMs,
+      blksize,
+      blocks,
+      ctime,
+      ctimeMs,
+      dev,
+      gid,
+      ino,
+      mode,
+      mtime,
+      mtimeMs,
+      nlink,
+      rdev,
+      size,
+      uid,
+    } = st
+    this.#atime = atime
+    this.#atimeMs = atimeMs
+    this.#birthtime = birthtime
+    this.#birthtimeMs = birthtimeMs
+    this.#blksize = blksize
+    this.#blocks = blocks
+    this.#ctime = ctime
+    this.#ctimeMs = ctimeMs
+    this.#dev = dev
+    this.#gid = gid
+    this.#ino = ino
+    this.#mode = mode
+    this.#mtime = mtime
+    this.#mtimeMs = mtimeMs
+    this.#nlink = nlink
+    this.#rdev = rdev
+    this.#size = size
+    this.#uid = uid
+    const ifmt = entToType(st)
+    // retain any other flags, but set the ifmt
+    this.#type = (this.#type & IFMT_UNKNOWN) | ifmt | LSTAT_CALLED
+    if (ifmt !== UNKNOWN && ifmt !== IFDIR && ifmt !== IFLNK) {
+      this.#type |= ENOTDIR
     }
   }
 
@@ -2273,7 +2384,10 @@ export class PathScurryWin32 extends PathScurryBase {
    */
   sep: '\\' = '\\'
 
-  constructor(cwd: URL | string = process.cwd(), opts: PathScurryOpts = {}) {
+  constructor(
+    cwd: URL | string = process.cwd(),
+    opts: PathScurryOpts = {}
+  ) {
     const { nocase = true } = opts
     super(cwd, win32, '\\', { ...opts, nocase })
     this.nocase = nocase
@@ -2329,7 +2443,10 @@ export class PathScurryPosix extends PathScurryBase {
    * separator for generating path strings
    */
   sep: '/' = '/'
-  constructor(cwd: URL | string = process.cwd(), opts: PathScurryOpts = {}) {
+  constructor(
+    cwd: URL | string = process.cwd(),
+    opts: PathScurryOpts = {}
+  ) {
     const { nocase = false } = opts
     super(cwd, posix, '/', { ...opts, nocase })
     this.nocase = nocase
@@ -2374,7 +2491,10 @@ export class PathScurryPosix extends PathScurryBase {
  * Uses {@link PathPosix} for Path objects.
  */
 export class PathScurryDarwin extends PathScurryPosix {
-  constructor(cwd: URL | string = process.cwd(), opts: PathScurryOpts = {}) {
+  constructor(
+    cwd: URL | string = process.cwd(),
+    opts: PathScurryOpts = {}
+  ) {
     const { nocase = true } = opts
     super(cwd, { ...opts, nocase })
   }

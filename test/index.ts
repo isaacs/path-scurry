@@ -1416,3 +1416,33 @@ t.test('depth', t => {
   t.equal(ps.cwd.parent?.depth(), 3)
   t.end()
 })
+
+t.test('lstat() fills out stat fields', async t => {
+  const cwd = t.testdir({
+    sync: '',
+    async: '',
+  })
+  const ps = new PathScurry(cwd)
+  const a = await ps.lstat('async')
+  if (!a) throw new Error('failed async lstat')
+  const ast = lstatSync(cwd + '/async')
+  for (const [field, value] of Object.entries(ast)) {
+    const found = a[field as keyof Path]
+    if (value instanceof Date) {
+      t.equal((found as Date).toISOString(), value.toISOString(), field)
+    } else {
+      t.equal(found, value, field)
+    }
+  }
+  const s = ps.lstatSync('sync')
+  if (!s) throw new Error('failed sync lstat')
+  const sst = lstatSync(cwd + '/sync')
+  for (const [field, value] of Object.entries(sst)) {
+    const found = s[field as keyof Path]
+    if (value instanceof Date) {
+      t.equal((found as Date).toISOString(), value.toISOString(), field)
+    } else {
+      t.equal(found, value, field)
+    }
+  }
+})
