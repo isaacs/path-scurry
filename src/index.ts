@@ -1,4 +1,4 @@
-import LRUCache from 'lru-cache'
+import { LRUCache } from 'lru-cache'
 import { posix, win32 } from 'path'
 
 import { fileURLToPath } from 'url'
@@ -17,7 +17,7 @@ const realpathSync = rps.native
 import { lstat, readdir, readlink, realpath } from 'fs/promises'
 
 import type { Dirent, Stats } from 'fs'
-import Minipass from 'minipass'
+import { Minipass } from 'minipass'
 
 /**
  * An object that will be used to override the default `fs`
