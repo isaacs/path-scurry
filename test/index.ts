@@ -88,17 +88,28 @@ t.test('platform-specific', t => {
     t.equal(pw.nocase, true, 'nocase on PathScurry')
     t.equal(pw.cwd.nocase, true, 'nocase on Path')
     t.equal(pw.resolve(), 'C:\\some\\path')
+    t.equal(pw.resolvePosix(), '//?/C:/some/path')
     t.equal(pw.relative('c:/some/path/a/b'), 'a\\b')
     t.equal(pw.relative('c:/some/a/b'), '..\\a\\b')
     t.equal(pw.relative('/a/b'), 'C:\\a\\b')
+    t.equal(pw.relativePosix('c:/some/path/a/b'), 'a/b')
+    t.equal(pw.relativePosix('c:/some/a/b'), '../a/b')
+    t.equal(pw.relativePosix('/a/b'), '//?/C:/a/b')
     t.equal(pw.cwd.fullpath(), 'C:\\some\\path')
+    t.equal(pw.cwd.fullpathPosix(), '//?/C:/some/path')
     t.equal(pw.cwd.getRoot('\\\\?\\c:\\'), pw.root)
     t.equal(pw.cwd.getRoot('C:\\'), pw.root)
     t.equal(pw.resolve('/'), 'C:\\')
+    t.equal(pw.resolvePosix('/'), '//?/C:/')
     t.equal(pw.resolve('foo'), 'C:\\some\\path\\foo')
+    t.equal(pw.resolvePosix('foo'), '//?/C:/some/path/foo')
     t.equal(
       pw.resolve('foo', '//x/y/some/absolute/path'),
       '\\\\X\\Y\\some\\absolute\\path'
+    )
+    t.equal(
+      pw.resolvePosix('foo', '//x/y/some/absolute/path'),
+      '//X/Y/some/absolute/path'
     )
     t.equal(pw.dirname(pw.root), 'C:\\')
     t.equal(
@@ -106,15 +117,26 @@ t.test('platform-specific', t => {
       'Y:\\some\\absolute\\path'
     )
     t.equal(
+      pw.resolvePosix('foo', '//?/y:/some/absolute/path'),
+      '//?/Y:/some/absolute/path'
+    )
+    t.equal(
       pw.resolve('d:\\x/y\\z\\a/../', '', '.', './/b'),
       'D:\\x\\y\\z\\b'
     )
+    t.equal(
+      pw.resolvePosix('d:\\x/y\\z\\a/../', '', '.', './/b'),
+      '//?/D:/x/y/z/b'
+    )
     t.equal(pw.cwd.resolve('//?/C:/some/PATH'), pw.cwd)
     t.equal(pw.resolve('//?/D:/X/y\\z\\a/../B'), 'D:\\x\\y\\z\\b')
+    t.equal(pw.resolvePosix('//?/D:/X/y\\z\\a/../B'), '//?/D:/x/y/z/b')
     t.equal(pw.resolve('//prp1/'), 'C:\\prp1')
+    t.equal(pw.resolvePosix('//prp1/'), '//?/C:/prp1')
     t.equal(pw.cwd.resolve('../../../../../../../'), pw.root)
     t.equal(new PathScurry('/prp2').cwd.fullpath(), 'C:\\prp2')
     t.equal(new PathScurry('\\prp3').resolve(), 'C:\\prp3')
+    t.equal(new PathScurry('\\prp3').resolvePosix(), '//?/C:/prp3')
     t.end()
   })
 
@@ -133,14 +155,23 @@ t.test('platform-specific', t => {
     t.equal(pw.nocase, true, 'nocase on PathScurry')
     t.equal(pw.cwd.nocase, true, 'nocase on Path')
     t.equal(pw.cwd.fullpath(), '/some/path')
+    t.equal(pw.cwd.fullpathPosix(), '/some/path')
     t.equal(pw.relative('/some/path/a/b'), 'a/b')
     t.equal(pw.relative('/some/a/b'), '../a/b')
     t.equal(pw.relative('/a/b'), '/a/b')
+    t.equal(pw.relativePosix('/some/path/a/b'), 'a/b')
+    t.equal(pw.relativePosix('/some/a/b'), '../a/b')
+    t.equal(pw.relativePosix('/a/b'), '/a/b')
     t.equal(pw.dirname(pw.root), '/')
     t.equal(pw.resolve('foo'), '/some/path/foo')
+    t.equal(pw.resolvePosix('foo'), '/some/path/foo')
     t.equal(pw.cwd.resolve('../../../../../../../'), pw.root)
     t.equal(
       pw.resolve('foo', '//x/y/some/absolute/path'),
+      '/x/y/some/absolute/path'
+    )
+    t.equal(
+      pw.resolvePosix('foo', '//x/y/some/absolute/path'),
       '/x/y/some/absolute/path'
     )
     t.equal(pw.cwd.resolve('foo'), pw.cwd.resolve('x/../FOO'))
@@ -161,10 +192,12 @@ t.test('platform-specific', t => {
     const pw = new PathScurry()
     t.equal(pw.cwd.fullpath(), '/some/path')
     t.equal(pw.resolve('foo'), '/some/path/foo')
+    t.equal(pw.resolvePosix('foo'), '/some/path/foo')
     t.equal(pw.nocase, false, 'nocase on PathScurry')
     t.equal(pw.cwd.nocase, false, 'nocase on Path')
     t.equal(pw.cwd.fullpath(), '/some/path')
     t.equal(pw.resolve('foo'), '/some/path/foo')
+    t.equal(pw.resolvePosix('foo'), '/some/path/foo')
     t.equal(pw.cwd.resolve('../../../../../../../'), pw.root)
     t.equal(pw.cwd.resolve('foo'), pw.cwd.resolve('x/../foo'))
     t.not(pw.cwd.resolve('foo'), pw.cwd.resolve('x/../FOO'))

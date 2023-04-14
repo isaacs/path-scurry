@@ -193,6 +193,7 @@ const normalizeNocase = (s: string) => {
 export interface PathOpts {
   fullpath?: string
   relative?: string
+  relativePosix?: string
   parent?: PathBase
   /**
    * See {@link FSOption}
@@ -381,7 +382,9 @@ export abstract class PathBase implements Dirent {
   #matchName: string
   #depth?: number
   #fullpath?: string
+  #fullpathPosix?: string
   #relative?: string
+  #relativePosix?: string
   #type: number
   #children: ChildrenCache
   #linkTarget?: PathBase
@@ -411,6 +414,7 @@ export abstract class PathBase implements Dirent {
     this.#children = children
     this.#fullpath = opts.fullpath
     this.#relative = opts.relative
+    this.#relativePosix = opts.relativePosix
     this.parent = opts.parent
     if (this.parent) {
       this.#fs = this.parent.#fs
@@ -552,8 +556,6 @@ export abstract class PathBase implements Dirent {
    * The relative path from the cwd. If it does not share an ancestor with
    * the cwd, then this ends up being equivalent to the fullpath()
    */
-  // TODO: instead of taking a param here, set it to '' in the constructor
-  // for the CWD, and set it to this.name for any roots.
   relative(): string {
     if (this.#relative !== undefined) {
       return this.#relative
@@ -566,6 +568,25 @@ export abstract class PathBase implements Dirent {
     const pv = p.relative()
     const rp = pv + (!pv || !p.parent ? '' : this.sep) + name
     return (this.#relative = rp)
+  }
+
+  /**
+   * The relative path from the cwd, using / as the path separator.
+   * If it does not share an ancestor with
+   * the cwd, then this ends up being equivalent to the fullpathPosix()
+   * On posix systems, this is identical to relative().
+   */
+  relativePosix(): string {
+    if (this.sep === '/') return this.relative()
+    if (this.#relativePosix !== undefined) return this.#relativePosix
+    const name = this.name
+    const p = this.parent
+    if (!p) {
+      return (this.#relativePosix = this.fullpathPosix())
+    }
+    const pv = p.relativePosix()
+    const rp = pv + (!pv || !p.parent ? '' : '/') + name
+    return (this.#relativePosix = rp)
   }
 
   /**
@@ -583,6 +604,29 @@ export abstract class PathBase implements Dirent {
     const pv = p.fullpath()
     const fp = pv + (!p.parent ? '' : this.sep) + name
     return (this.#fullpath = fp)
+  }
+
+  /**
+   * On platforms other than windows, this is identical to fullpath.
+   *
+   * On windows, this is overridden to return the forward-slash form of the
+   * full UNC path.
+   */
+  fullpathPosix(): string {
+    if (this.#fullpathPosix !== undefined) return this.#fullpathPosix
+    if (this.sep === '/') return (this.#fullpathPosix = this.fullpath())
+    if (!this.parent) {
+      const p = this.fullpath().replace(/\\/g, '/')
+      if (/^[a-z]:\//i.test(p)) {
+        return (this.#fullpathPosix = `//?/${p}`)
+      } else {
+        return (this.#fullpathPosix = p)
+      }
+    }
+    const p = this.parent
+    const pfpp = p.fullpathPosix()
+    const fpp = pfpp + (!pfpp || !p.parent ? '' : '/') + this.name
+    return (this.#fullpathPosix = fpp)
   }
 
   /**
@@ -1468,6 +1512,7 @@ export abstract class PathScurryBase {
    */
   cwd: PathBase
   #resolveCache: ResolveCache
+  #resolvePosixCache: ResolveCache
   #children: ChildrenCache
   /**
    * Perform path comparisons case-insensitively.
@@ -1512,6 +1557,7 @@ export abstract class PathScurryBase {
     this.roots = Object.create(null)
     this.rootPath = this.parseRootPath(cwdPath)
     this.#resolveCache = new ResolveCache()
+    this.#resolvePosixCache = new ResolveCache()
     this.#children = new ChildrenCache(childrenCacheSize)
 
     const split = cwdPath.substring(this.rootPath.length).split(sep)
@@ -1535,8 +1581,10 @@ export abstract class PathScurryBase {
     let abs = this.rootPath
     let sawFirst = false
     for (const part of split) {
+      const l = len--
       prev = prev.child(part, {
-        relative: new Array(len--).fill('..').join(joinSep),
+        relative: new Array(l).fill('..').join(joinSep),
+        relativePosix: new Array(l).fill('..').join('/'),
         fullpath: (abs += (sawFirst ? '' : joinSep) + part),
       })
       sawFirst = true
@@ -1612,6 +1660,38 @@ export abstract class PathScurryBase {
   }
 
   /**
+   * Resolve one or more path strings to a resolved string, returning
+   * the posix path.  Identical to .resolve() on posix systems, but on
+   * windows will return a forward-slash separated UNC path.
+   *
+   * Same interface as require('path').resolve.
+   *
+   * Much faster than path.resolve() when called multiple times for the same
+   * path, because the resolved Path objects are cached.  Much slower
+   * otherwise.
+   */
+  resolvePosix(...paths: string[]): string {
+    // first figure out the minimum number of paths we have to test
+    // we always start at cwd, but any absolutes will bump the start
+    let r = ''
+    for (let i = paths.length - 1; i >= 0; i--) {
+      const p = paths[i]
+      if (!p || p === '.') continue
+      r = r ? `${p}/${r}` : p
+      if (this.isAbsolute(p)) {
+        break
+      }
+    }
+    const cached = this.#resolvePosixCache.get(r)
+    if (cached !== undefined) {
+      return cached
+    }
+    const result = this.cwd.resolve(r).fullpathPosix()
+    this.#resolvePosixCache.set(r, result)
+    return result
+  }
+
+  /**
    * find the relative path from the cwd to the supplied path string or entry
    */
   relative(entry: PathBase | string = this.cwd): string {
@@ -1619,6 +1699,17 @@ export abstract class PathScurryBase {
       entry = this.cwd.resolve(entry)
     }
     return entry.relative()
+  }
+
+  /**
+   * find the relative path from the cwd to the supplied path string or
+   * entry, using / as the path delimiter, even on Windows.
+   */
+  relativePosix(entry: PathBase | string = this.cwd): string {
+    if (typeof entry === 'string') {
+      entry = this.cwd.resolve(entry)
+    }
+    return entry.relativePosix()
   }
 
   /**

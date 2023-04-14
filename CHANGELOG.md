@@ -1,5 +1,11 @@
 # churnge loog
 
+## 1.7
+
+- Add `Path.fullpathPosix()`, `Path.relativePosix()`,
+  `PathScurry.resolvePosix()`, `PathScurry.relativePosix()`, for
+  getting posix style paths on Windows.
+
 ## 1.6
 
 - Allow overriding the default fs with custom methods

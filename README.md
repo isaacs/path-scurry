@@ -234,7 +234,7 @@ constructor.
   repeated path resolution.
 
 - `fs` An object that will be used to override the default `fs`
-  methods.  Any methods that are not overridden will use Node's
+  methods. Any methods that are not overridden will use Node's
   built-in implementations.
 
   - lstatSync
@@ -353,6 +353,17 @@ To get a `Path` object resolved from the `PathScurry`, use
 `pw.cwd.resolve(path)`. Note that `Path.resolve` only takes a
 single string argument, not multiple.
 
+#### `pw.resolvePosix(...paths: string[])`
+
+Caching `path.resolve()`, but always using posix style paths.
+
+This is identical to `pw.resolve(...paths)` on posix systems (ie,
+everywhere except Windows).
+
+On Windows, it returns the full absolute UNC path using `/`
+separators. Ie, instead of `'C:\\foo\\bar`, it would return
+`//?/C:/foo/bar`.
+
 #### `pw.relative(path: string | Path): string`
 
 Return the relative path from the PathWalker cwd to the supplied
@@ -360,6 +371,23 @@ path string or entry.
 
 If the nearest common ancestor is the root, then an absolute path
 is returned.
+
+#### `pw.relativePosix(path: string | Path): string`
+
+Return the relative path from the PathWalker cwd to the supplied
+path string or entry, using `/` path separators.
+
+If the nearest common ancestor is the root, then an absolute path
+is returned.
+
+On posix platforms (ie, all platforms except Windows), this is
+identical to `pw.relative(path)`.
+
+On Windows systems, it returns the resulting string as a
+`/`-delimited path. If an absolute path is returned (because the
+target does not share a common ancestor with `pw.cwd`), then a
+full absolute UNC path will be returned. Ie, instead of
+`'C:\\foo\\bar`, it would return `//?/C:/foo/bar`.
 
 #### `pw.basename(path: string | Path): string`
 
@@ -464,15 +492,15 @@ drive letter (in this case `'C:\\'`).
 
 Name of this file system entry.
 
-**Important**: *always* test the path name against any test
+**Important**: _always_ test the path name against any test
 string using the `isNamed` method, and not by directly comparing
-this string.  Otherwise, unicode path strings that the system
+this string. Otherwise, unicode path strings that the system
 sees as identical will not be properly treated as the same path,
 leading to incorrect behavior and possible security issues.
 
 #### `path.isNamed(s: string)`
 
-Return true if the path is a match for the given path name.  This
+Return true if the path is a match for the given path name. This
 handles case sensitivity and unicode normalization.
 
 Note: even on case-sensitive systems, it is **not** safe to test
@@ -490,6 +518,15 @@ Root paths have a depth of `0`.
 #### `path.fullpath()`
 
 The fully resolved path to the entry.
+
+#### `path.fullpathPosix()`
+
+The fully resolved path to the entry, using `/` separators.
+
+On posix systems, this is identical to `path.fullpath()`. On
+windows, this will return a fully resolved absolute UNC path
+using `/` separators. Eg, instead of `'C:\\foo\\bar'`, it will
+return `'//?/C:/foo/bar'`.
 
 #### `path.isFile()`, `path.isDirectory()`, etc.
 
@@ -512,6 +549,23 @@ path string or entry.
 
 If the nearest common ancestor is the root, then an absolute path
 is returned.
+
+#### `path.relativePosix(): string`
+
+Return the relative path from the PathWalker cwd to the supplied
+path string or entry, using `/` path separators.
+
+If the nearest common ancestor is the root, then an absolute path
+is returned.
+
+On posix platforms (ie, all platforms except Windows), this is
+identical to `pw.relative(path)`.
+
+On Windows systems, it returns the resulting string as a
+`/`-delimited path. If an absolute path is returned (because the
+target does not share a common ancestor with `pw.cwd`), then a
+full absolute UNC path will be returned. Ie, instead of
+`'C:\\foo\\bar`, it would return `//?/C:/foo/bar`.
 
 #### `async path.readdir()`
 
