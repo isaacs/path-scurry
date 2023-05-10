@@ -334,6 +334,12 @@ single tick if the stream is fully consumed.
 Path object representing the current working directory for the
 PathScurry.
 
+#### `pw.chdir(path: string)`
+
+Set the new effective current working directory for the scurry
+object, so that `path.relative()` and `path.relativePosix()`
+return values relative to the new cwd path.
+
 #### `pw.depth(path?: Path | string): number`
 
 Return the depth of the specified path (or the PathScurry cwd)

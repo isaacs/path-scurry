@@ -2,7 +2,7 @@ import * as fs from 'fs'
 import { lstatSync, readdirSync, writeFileSync } from 'fs'
 import * as fsp from 'fs/promises'
 import { lstat } from 'fs/promises'
-import { basename, resolve } from 'path'
+import { basename, resolve, relative } from 'path'
 import { rimrafSync } from 'rimraf'
 import t from 'tap'
 import { pathToFileURL } from 'url'
@@ -1529,4 +1529,68 @@ t.test('custom FS override option', async t => {
   await psCustomSync.lstat()
   t.equal(calledLstat, 1)
   t.equal(calledLstatSync, 2)
+})
+
+t.test('chdir', async t => {
+  const ps = new PathScurry()
+  const oldCwd = ps.cwd
+  const a = ps.cwd.resolve('a')
+
+  const oldRoot = ps.root
+  const rfp = oldRoot.fullpath()
+  const rfpp = oldRoot.fullpathPosix()
+  t.equal(oldRoot.relative(), rfp)
+  t.equal(oldRoot.relativePosix(), rfp)
+
+  t.equal(a.relative(), 'a')
+  t.equal(a.relativePosix(), 'a')
+  const bc = a.resolve('b/c')
+  t.equal(bc.relativePosix(), 'a/b/c')
+  const p = ps.cwd.resolve('..')
+  t.equal(p.relative(), '..')
+
+  ps.chdir('x')
+  t.equal(a.relativePosix(), '../a')
+  t.equal(a.relative(), `..${ps.sep}a`)
+  t.equal(bc.relativePosix(), '../a/b/c')
+  t.equal(p.relative(), `..${ps.sep}..`)
+  t.equal(p.relativePosix(), `../..`)
+  t.equal(ps.cwd.resolve('..'), oldCwd)
+  t.equal(oldCwd.relative(), '..')
+  t.equal(oldCwd.relativePosix(), '..')
+
+  t.equal(ps.root, oldRoot, 'root unchanged')
+  t.equal(ps.root.fullpath(), rfp, 'root fullpath unchanged')
+  t.equal(ps.root.fullpathPosix(), rfpp, 'root fullpathPosix unchanged')
+  t.equal(ps.root.relative(), rfp, 'root relative unchanged')
+  t.equal(ps.root.relativePosix(), rfpp, 'root relativePosix unchanged')
+
+  // now change to somewhere a bit more different
+  ps.chdir(ps.cwd.resolve('../../i/j/k/l'))
+  t.equal(oldCwd.relative(), relative(ps.cwd.fullpath(), oldCwd.fullpath()))
+  t.equal(a.relative(), relative(ps.cwd.fullpath(), a.fullpath()))
+  t.equal(bc.relative(), relative(ps.cwd.fullpath(), bc.fullpath()))
+
+  // verify no-op changes nothing
+  const expect = {
+    newCwd: ps.cwd.fullpath(),
+    oldcwdf: oldCwd.fullpath(),
+    oldcwdr: oldCwd.relative(),
+    oldcwdrp: oldCwd.relativePosix(),
+    ar: a.relative(),
+    arp: a.relativePosix(),
+    rr: oldRoot.relative(),
+    rrp: oldRoot.relativePosix(),
+  }
+  ps.chdir(ps.cwd.fullpath())
+  t.strictSame({
+    newCwd: ps.cwd.fullpath(),
+    oldcwdf: oldCwd.fullpath(),
+    oldcwdr: oldCwd.relative(),
+    oldcwdrp: oldCwd.relativePosix(),
+    ar: a.relative(),
+    arp: a.relativePosix(),
+    rr: oldRoot.relative(),
+    rrp: oldRoot.relativePosix(),
+  }, expect)
 })

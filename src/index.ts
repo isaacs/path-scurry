@@ -244,6 +244,8 @@ export class ChildrenCache extends LRUCache<PathBase, Children> {
  */
 export type Children = PathBase[] & { provisional: number }
 
+const setAsCwd = Symbol('PathScurry setAsCwd')
+
 /**
  * Path objects are sort of like a super-powered
  * {@link https://nodejs.org/docs/latest/api/fs.html#class-fsdirent fs.Dirent}
@@ -566,8 +568,7 @@ export abstract class PathBase implements Dirent {
       return (this.#relative = this.name)
     }
     const pv = p.relative()
-    const rp = pv + (!pv || !p.parent ? '' : this.sep) + name
-    return (this.#relative = rp)
+    return pv + (!pv || !p.parent ? '' : this.sep) + name
   }
 
   /**
@@ -585,8 +586,7 @@ export abstract class PathBase implements Dirent {
       return (this.#relativePosix = this.fullpathPosix())
     }
     const pv = p.relativePosix()
-    const rp = pv + (!pv || !p.parent ? '' : '/') + name
-    return (this.#relativePosix = rp)
+    return pv + (!pv || !p.parent ? '' : '/') + name
   }
 
   /**
@@ -1296,6 +1296,34 @@ export abstract class PathBase implements Dirent {
       return (this.#realpath = this.resolve(rp))
     } catch (_) {
       this.#markENOREALPATH()
+    }
+  }
+
+  /**
+   * Internal method to mark this Path object as the scurry cwd,
+   * called by {@link PathScurry#chdir}
+   *
+   * @internal
+   */
+  [setAsCwd](oldCwd: PathBase): void {
+    if (oldCwd === this) return
+
+    const changed = new Set<PathBase>([])
+    let rp = []
+    let p: PathBase = this
+    while (p && p.parent) {
+      changed.add(p)
+      p.#relative = rp.join(this.sep)
+      p.#relativePosix = rp.join('/')
+      p = p.parent
+      rp.push('..')
+    }
+    // now un-memoize parents of old cwd
+    p = oldCwd
+    while (p && p.parent && !changed.has(p)) {
+      p.#relative = undefined
+      p.#relativePosix = undefined
+      p = p.parent
     }
   }
 }
@@ -2525,6 +2553,12 @@ export abstract class PathScurryBase {
     }
     process()
     return results as Minipass<string> | Minipass<PathBase>
+  }
+
+  chdir(path: string | Path = this.cwd) {
+    const oldCwd = this.cwd
+    this.cwd = typeof path === 'string' ? this.cwd.resolve(path) : path
+    this.cwd[setAsCwd](oldCwd)
   }
 }
 
