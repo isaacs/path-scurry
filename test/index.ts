@@ -1540,7 +1540,7 @@ t.test('chdir', async t => {
   const rfp = oldRoot.fullpath()
   const rfpp = oldRoot.fullpathPosix()
   t.equal(oldRoot.relative(), rfp)
-  t.equal(oldRoot.relativePosix(), rfp)
+  t.equal(oldRoot.relativePosix(), rfpp)
 
   t.equal(a.relative(), 'a')
   t.equal(a.relativePosix(), 'a')
