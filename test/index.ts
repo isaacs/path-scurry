@@ -96,6 +96,8 @@ t.test('platform-specific', t => {
     t.equal(pw.relativePosix('c:/some/a/b'), '../a/b')
     t.equal(pw.relativePosix('/a/b'), '//?/C:/a/b')
     t.equal(pw.cwd.fullpath(), 'C:\\some\\path')
+    t.equal(pw.cwd.path, pw.cwd.parent.fullpath())
+    t.equal(pw.cwd.root.path, pw.cwd.root.fullpath())
     t.equal(pw.cwd.fullpathPosix(), '//?/C:/some/path')
     t.equal(pw.cwd.getRoot('\\\\?\\c:\\'), pw.root)
     t.equal(pw.cwd.getRoot('C:\\'), pw.root)

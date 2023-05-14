@@ -393,6 +393,17 @@ export abstract class PathBase implements Dirent {
   #realpath?: PathBase
 
   /**
+   * This property is for compatibility with the Dirent class as of
+   * Node v20, where Dirent['path'] refers to the path of the directory
+   * that was passed to readdir.  So, somewhat counterintuitively, this
+   * property refers to the *parent* path, not the path object itself.
+   * For root entries, it's the path to the entry itself.
+   */
+  get path(): string {
+    return (this.parent || this).fullpath()
+  }
+
+  /**
    * Do not create new Path objects directly.  They should always be accessed
    * via the PathScurry class or other methods on the Path class.
    *
