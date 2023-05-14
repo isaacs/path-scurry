@@ -1,5 +1,13 @@
 # churnge loog
 
+## 1.9
+
+- Add `path` for compatibility with Node v20 Dirent
+
+## 1.8
+
+- add `PathScurry.chdir` method
+
 ## 1.7
 
 - Add `Path.fullpathPosix()`, `Path.relativePosix()`,
