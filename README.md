@@ -504,7 +504,7 @@ this string. Otherwise, unicode path strings that the system
 sees as identical will not be properly treated as the same path,
 leading to incorrect behavior and possible security issues.
 
-#### `path.isNamed(s: string)`
+#### `path.isNamed(name: string): boolean`
 
 Return true if the path is a match for the given path name. This
 handles case sensitivity and unicode normalization.
@@ -515,6 +515,18 @@ pathname matches, due to unicode normalization mismatches.
 
 Always use this method instead of testing the `path.name`
 property directly.
+
+#### `path.getType()`
+
+Returns the type of the Path object, `'File'`, `'Directory'`,
+etc.
+
+#### `path.isType(t: type)`
+
+Returns true if `is{t}()` returns true.
+
+For example, `path.isType('Directory')` is equivalent to
+`path.isDirectory()`.
 
 #### `path.depth()`
 

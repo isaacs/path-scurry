@@ -302,18 +302,23 @@ t.test('lstat', async t => {
   t.equal(pw.lstatSync('also/not/existing'), undefined)
   t.equal(await pw.lstat('also/not/existing'), undefined)
   t.equal(pw.cwd.resolve('not/existing')?.isUnknown(), true)
+  t.equal(pw.cwd.resolve('not/existing')?.getType(), 'Unknown')
 
   const file = pw.lstatSync('exists')
   if (file == undefined) throw new Error('expect file')
   t.type(file, Path)
   t.equal(file.isFile(), true)
+  t.equal(file.getType(), 'File')
+  t.equal(file.isType('File'), true)
+  t.equal(file.isType('Directory'), false)
+  t.equal(file.isType('Socket'), false)
   t.equal(file.isDirectory(), false)
   t.equal(file.isSymbolicLink(), false)
   t.equal(file.isCharacterDevice(), false)
   t.equal(file.isBlockDevice(), false)
   t.equal(file.isFIFO(), false)
   t.equal(file.isSocket(), false)
-  t.equal(file.isUnknown(), false)
+  t.equal(file.isType('Unknown'), false)
 
   const dir = pw.lstatSync('dir')
   if (!dir) throw new Error('expect dir to exist')
@@ -322,6 +327,7 @@ t.test('lstat', async t => {
   t.equal(pw.basename(dir), 'dir')
   t.equal(dir.isFile(), false)
   t.equal(dir.isDirectory(), true)
+  t.equal(dir.getType(), 'Directory')
   t.equal(dir.isSymbolicLink(), false)
   t.equal(dir.isCharacterDevice(), false)
   t.equal(dir.isBlockDevice(), false)
@@ -335,6 +341,7 @@ t.test('lstat', async t => {
   t.equal(link.isFile(), false)
   t.equal(link.isDirectory(), false)
   t.equal(link.isSymbolicLink(), true)
+  t.equal(link.getType(), 'SymbolicLink')
   t.equal(link.isCharacterDevice(), false)
   t.equal(link.isBlockDevice(), false)
   t.equal(link.isFIFO(), false)
@@ -731,6 +738,7 @@ t.test('all the IFMTs!', async t => {
     for (const k of Object.keys(base) as (keyof typeof base)[]) {
       t.equal(e[k](), k === pass, `${e.name} ${k} ${k === pass}`)
     }
+    t.equal(e.getType(), pass.replace(/^is/, ''), `${e.name} getType()`)
   }
 
   const fakeStat = (f: string) => {

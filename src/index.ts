@@ -130,6 +130,16 @@ const IFLNK = 0b1010
 const IFSOCK = 0b1100
 const IFMT = 0b1111
 
+export type Type =
+  | 'Unknown'
+  | 'FIFO'
+  | 'CharacterDevice'
+  | 'Directory'
+  | 'BlockDevice'
+  | 'File'
+  | 'SymbolicLink'
+  | 'Socket'
+
 // mask to unset low 4 bits
 const IFMT_UNKNOWN = ~IFMT
 
@@ -649,6 +659,31 @@ export abstract class PathBase implements Dirent {
    */
   isUnknown(): boolean {
     return (this.#type & IFMT) === UNKNOWN
+  }
+
+  isType(type: Type): boolean {
+    return this[`is${type}`]()
+  }
+
+  getType(): Type {
+    return this.isUnknown()
+      ? 'Unknown'
+      : this.isDirectory()
+      ? 'Directory'
+      : this.isFile()
+      ? 'File'
+      : this.isSymbolicLink()
+      ? 'SymbolicLink'
+      : this.isFIFO()
+      ? 'FIFO'
+      : this.isCharacterDevice()
+      ? 'CharacterDevice'
+      : this.isBlockDevice()
+      ? 'BlockDevice'
+      : /* c8 ignore start */ this.isSocket()
+      ? 'Socket'
+      : 'Unknown'
+    /* c8 ignore stop */
   }
 
   /**
