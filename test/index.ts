@@ -2,11 +2,11 @@ import * as fs from 'fs'
 import { lstatSync, readdirSync, writeFileSync } from 'fs'
 import * as fsp from 'fs/promises'
 import { lstat } from 'fs/promises'
-import { basename, resolve, relative } from 'path'
+import { basename, relative, resolve } from 'path'
 import { rimrafSync } from 'rimraf'
-import t from 'tap'
+import t, { Test } from 'tap'
 import { pathToFileURL } from 'url'
-import { normalizePaths } from './fixtures/normalize-paths'
+import { normalizePaths } from './fixtures/normalize-paths.js'
 
 import {
   FSOption,
@@ -19,7 +19,7 @@ import {
   PathScurryWin32,
   PathWin32,
   WalkOptions,
-} from '../'
+} from '../dist/esm/index.js'
 
 t.formatSnapshot = (o: any) =>
   normalizePaths(o, { [process.cwd()]: '{CWD}' })
@@ -73,13 +73,14 @@ t.test('platform-specific', t => {
     t.end()
   })
 
-  t.test('force windows', t => {
+  t.test('force windows', async t => {
     t.teardown(() => setPlatform())
     setPlatform('win32')
-    const { PathScurry, PathScurryWin32, Path, PathWin32 } = t.mock(
-      '../',
-      {}
-    )
+    const { PathScurry, PathScurryWin32, Path, PathWin32 } =
+      await t.mockImport<typeof import('../dist/esm/index.js')>(
+        '../dist/esm/index.js',
+        {}
+      )
     t.teardown(() => setCWD())
     setCWD('win32')
     t.equal(PathScurry, PathScurryWin32, 'expect windows Scurry')
@@ -96,7 +97,7 @@ t.test('platform-specific', t => {
     t.equal(pw.relativePosix('c:/some/a/b'), '../a/b')
     t.equal(pw.relativePosix('/a/b'), '//?/C:/a/b')
     t.equal(pw.cwd.fullpath(), 'C:\\some\\path')
-    t.equal(pw.cwd.path, pw.cwd.parent.fullpath())
+    t.equal(pw.cwd.path, pw.cwd.parent?.fullpath())
     t.equal(pw.cwd.root.path, pw.cwd.root.fullpath())
     t.equal(pw.cwd.fullpathPosix(), '//?/C:/some/path')
     t.equal(pw.cwd.getRoot('\\\\?\\c:\\'), pw.root)
@@ -142,13 +143,14 @@ t.test('platform-specific', t => {
     t.end()
   })
 
-  t.test('force darwin', t => {
+  t.test('force darwin', async t => {
     t.teardown(() => setPlatform())
     setPlatform('darwin')
-    const { PathScurry, PathScurryDarwin, Path, PathPosix } = t.mock(
-      '../',
-      {}
-    )
+    const { PathScurry, PathScurryDarwin, Path, PathPosix } =
+      await t.mockImport<typeof import('../dist/esm/index.js')>(
+        '../dist/esm/index.js',
+        {}
+      )
     t.teardown(() => setCWD())
     setCWD('posix')
     t.equal(PathScurry, PathScurryDarwin, 'expect darwin Scurry')
@@ -180,13 +182,14 @@ t.test('platform-specific', t => {
     t.end()
   })
 
-  t.test('force posix', t => {
+  t.test('force posix', async t => {
     t.teardown(() => setPlatform())
     setPlatform('posix')
-    const { PathScurry, PathScurryPosix, Path, PathPosix } = t.mock(
-      '../',
-      {}
-    )
+    const { PathScurry, PathScurryPosix, Path, PathPosix } =
+      await t.mockImport<typeof import('../dist/esm/index.js')>(
+        '../dist/esm/index.js',
+        {}
+      )
     t.teardown(() => setCWD())
     setCWD('posix')
     t.equal(PathScurry, PathScurryPosix, 'expect posix Scurry')
@@ -731,7 +734,7 @@ t.test('all the IFMTs!', async t => {
   }
 
   const onlyOne = (
-    t: Tap.Test,
+    t: Test,
     e: Path & { [k in keyof typeof base]: () => boolean },
     pass: string = ''
   ) => {
@@ -808,7 +811,9 @@ t.test('all the IFMTs!', async t => {
     promises: mockFsPromises,
   }
 
-  const { PathScurry } = t.mock('../', {
+  const { PathScurry } = await t.mockImport<
+    typeof import('../dist/esm/index.js')
+  >('../dist/esm/index.js', {
     fs: mockFs,
     'fs/promises': mockFsPromises,
   })
@@ -861,12 +866,14 @@ t.test('weird readdir failure', async t => {
       throw Object.assign(new Error('wat'), { code: 'wat' })
     },
   }
-  const { PathScurry } = t.mock('../', { fs: mockFs })
+  const { PathScurry } = await t.mockImport<
+    typeof import('../dist/esm/index.js')
+  >('../dist/esm/index.js', { fs: mockFs })
   const pw = new PathScurry(t.testdir({ a: '' }))
   const a = pw.cwd.resolve('a').lstatSync()
-  t.equal(a.isFile(), true)
+  t.equal(a?.isFile(), true)
   t.same(pw.readdirSync(), [])
-  t.equal(a.isFile(), true)
+  t.equal(a?.isFile(), true)
   t.same(pw.cwd.children(), [a])
   t.match(pw.cwd.children(), { provisional: 0 })
 })
@@ -1412,7 +1419,7 @@ t.test('inflight readdirCB calls', t => {
     })
   }
   const next = () => {
-    t.equal(results[0].size, 100)
+    t.equal(results[0]?.size, 100)
     for (let i = 1; i < 100; i++) {
       t.same(results[i], results[0])
     }
@@ -1434,7 +1441,7 @@ t.test('inflight async readdir calls', t => {
     })
   }
   const next = () => {
-    t.equal(results[0].size, 100)
+    t.equal(results[0]?.size, 100)
     for (let i = 1; i < 100; i++) {
       t.same(results[i], results[0])
     }
@@ -1577,7 +1584,10 @@ t.test('chdir', async t => {
 
   // now change to somewhere a bit more different
   ps.chdir(ps.cwd.resolve('../../i/j/k/l'))
-  t.equal(oldCwd.relative(), relative(ps.cwd.fullpath(), oldCwd.fullpath()))
+  t.equal(
+    oldCwd.relative(),
+    relative(ps.cwd.fullpath(), oldCwd.fullpath())
+  )
   t.equal(a.relative(), relative(ps.cwd.fullpath(), a.fullpath()))
   t.equal(bc.relative(), relative(ps.cwd.fullpath(), bc.fullpath()))
 
@@ -1593,14 +1603,17 @@ t.test('chdir', async t => {
     rrp: oldRoot.relativePosix(),
   }
   ps.chdir(ps.cwd.fullpath())
-  t.strictSame({
-    newCwd: ps.cwd.fullpath(),
-    oldcwdf: oldCwd.fullpath(),
-    oldcwdr: oldCwd.relative(),
-    oldcwdrp: oldCwd.relativePosix(),
-    ar: a.relative(),
-    arp: a.relativePosix(),
-    rr: oldRoot.relative(),
-    rrp: oldRoot.relativePosix(),
-  }, expect)
+  t.strictSame(
+    {
+      newCwd: ps.cwd.fullpath(),
+      oldcwdf: oldCwd.fullpath(),
+      oldcwdr: oldCwd.relative(),
+      oldcwdrp: oldCwd.relativePosix(),
+      ar: a.relative(),
+      arp: a.relativePosix(),
+      rr: oldRoot.relative(),
+      rrp: oldRoot.relativePosix(),
+    },
+    expect
+  )
 })

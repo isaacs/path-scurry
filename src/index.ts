@@ -904,7 +904,8 @@ export abstract class PathBase implements Dirent {
     this.#type |= READDIR_CALLED
     // mark all remaining provisional children as ENOENT
     for (let p = children.provisional; p < children.length; p++) {
-      children[p].#markENOENT()
+      const c = children[p]
+      if (c) c.#markENOENT()
     }
   }
 
@@ -1016,11 +1017,11 @@ export abstract class PathBase implements Dirent {
       const name = this.nocase
         ? normalizeNocase(e.name)
         : normalize(e.name)
-      if (name !== pchild.#matchName) {
+      if (name !== pchild!.#matchName) {
         continue
       }
 
-      return this.#readdirPromoteChild(e, pchild, p, c)
+      return this.#readdirPromoteChild(e, pchild!, p, c)
     }
   }
 

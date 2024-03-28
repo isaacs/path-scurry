@@ -2,7 +2,7 @@
 /*
 /.*
 !/src
-!/docs
+!/.tshy
 !/package.json
 !/package-lock.json
 !/README.md
