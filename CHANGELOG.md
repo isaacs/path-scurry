@@ -3,6 +3,7 @@
 ## 1.9
 
 - Add `path` for compatibility with Node v20 Dirent
+- Correctly readlink() in multiply nested symlink directories
 
 ## 1.8
 

@@ -1617,3 +1617,28 @@ t.test('chdir', async t => {
     expect
   )
 })
+
+t.test('link targets in multiply nested symlinks', async t => {
+  const cwd = t.testdir({
+    dir_baz: {
+      bar: t.fixture('symlink', '../dir_bar'),
+    },
+    dir_bar: {
+      foo: t.fixture('symlink', '../dir_foo'),
+    },
+    dir_foo: {
+      'foo.txt': 'hello'
+    }
+  })
+  t.test('async', async t => {
+    const p = new PathScurry(cwd)
+    const link = p.cwd.resolve('./dir_baz/bar/foo')
+    t.ok(await (await link.readlink())?.lstat(), 'found the link target')
+  })
+  t.test('sync', t =>  {
+    const p = new PathScurry(cwd)
+    const link = p.cwd.resolve('./dir_baz/bar/foo')
+    t.ok(link.readlinkSync()?.lstatSync(), 'found the link target')
+    t.end()
+  })
+})

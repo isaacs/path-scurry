@@ -860,7 +860,7 @@ export abstract class PathBase implements Dirent {
     /* c8 ignore stop */
     try {
       const read = await this.#fs.promises.readlink(this.fullpath())
-      const linkTarget = this.parent.resolve(read)
+      const linkTarget = (await this.parent.realpath())?.resolve(read)
       if (linkTarget) {
         return (this.#linkTarget = linkTarget)
       }
@@ -889,7 +889,7 @@ export abstract class PathBase implements Dirent {
     /* c8 ignore stop */
     try {
       const read = this.#fs.readlinkSync(this.fullpath())
-      const linkTarget = this.parent.resolve(read)
+      const linkTarget = (this.parent.realpathSync())?.resolve(read)
       if (linkTarget) {
         return (this.#linkTarget = linkTarget)
       }
