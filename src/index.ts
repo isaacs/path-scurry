@@ -1,9 +1,9 @@
 import { LRUCache } from 'lru-cache'
-import { posix, win32 } from 'path'
+import { posix, win32 } from 'node:path'
 
-import { fileURLToPath } from 'url'
+import { fileURLToPath } from 'node:url'
 
-import * as actualFS from 'fs'
+import * as actualFS from 'node:fs'
 import {
   lstatSync,
   readdir as readdirCB,
@@ -14,9 +14,9 @@ import {
 const realpathSync = rps.native
 // TODO: test perf of fs/promises realpath vs realpathCB,
 // since the promises one uses realpath.native
-import { lstat, readdir, readlink, realpath } from 'fs/promises'
+import { lstat, readdir, readlink, realpath } from 'node:fs/promises'
 
-import type { Dirent, Stats } from 'fs'
+import type { Dirent, Stats } from 'node:fs'
 import { Minipass } from 'minipass'
 
 /**
