@@ -404,13 +404,20 @@ export abstract class PathBase implements Dirent {
 
   /**
    * This property is for compatibility with the Dirent class as of
-   * Node v20, where Dirent['path'] refers to the path of the directory
-   * that was passed to readdir.  So, somewhat counterintuitively, this
-   * property refers to the *parent* path, not the path object itself.
-   * For root entries, it's the path to the entry itself.
+   * Node v20, where Dirent['parentPath'] refers to the path of the
+   * directory that was passed to readdir. For root entries, it's the path
+   * to the entry itself.
+   */
+  get parentPath(): string {
+    return (this.parent || this).fullpath()
+  }
+
+  /**
+   * Deprecated alias for Dirent['parentPath'] Somewhat counterintuitively,
+   * this property refers to the *parent* path, not the path object itself.
    */
   get path(): string {
-    return (this.parent || this).fullpath()
+    return this.parentPath
   }
 
   /**
