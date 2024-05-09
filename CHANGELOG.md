@@ -1,5 +1,17 @@
 # churnge loog
 
+## 1.11
+
+- Add `path.isCWD`, correctly report relative paths of entries
+  when the root is the cwd.
+
+## 1.10
+
+- fixes for the `Dirent` type changes in node 20
+- correctly readlink() when in multiply-nested symlink dirs
+- update Minipass to v7
+- add getType(), isType() methods
+
 ## 1.9
 
 - Add `path` for compatibility with Node v20 Dirent
