@@ -26,7 +26,6 @@
     "preversion": "npm test",
     "postversion": "npm publish",
     "prepublishOnly": "git push origin --follow-tags",
-    "preprepare": "rm -rf dist",
     "prepare": "tshy",
     "pretest": "npm run prepare",
     "presnap": "npm run prepare",
@@ -57,7 +56,7 @@
     "rimraf": "^5.0.1",
     "tap": "^18.7.2",
     "ts-node": "^10.9.2",
-    "tshy": "^1.12.0",
+    "tshy": "^1.14.0",
     "typedoc": "^0.25.12",
     "typescript": "^5.4.3"
   },
@@ -76,6 +75,7 @@
     "minipass": "^5.0.0 || ^6.0.2 || ^7.0.0"
   },
   "tshy": {
+    "selfLink": false,
     "exports": {
       "./package.json": "./package.json",
       ".": "./src/index.ts"
