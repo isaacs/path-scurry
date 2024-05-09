@@ -79,7 +79,7 @@ t.test('platform-specific', t => {
     const { PathScurry, PathScurryWin32, Path, PathWin32 } =
       await t.mockImport<typeof import('../dist/esm/index.js')>(
         '../dist/esm/index.js',
-        {}
+        {},
       )
     t.teardown(() => setCWD())
     setCWD('win32')
@@ -108,28 +108,28 @@ t.test('platform-specific', t => {
     t.equal(pw.resolvePosix('foo'), '//?/C:/some/path/foo')
     t.equal(
       pw.resolve('foo', '//x/y/some/absolute/path'),
-      '\\\\X\\Y\\some\\absolute\\path'
+      '\\\\X\\Y\\some\\absolute\\path',
     )
     t.equal(
       pw.resolvePosix('foo', '//x/y/some/absolute/path'),
-      '//X/Y/some/absolute/path'
+      '//X/Y/some/absolute/path',
     )
     t.equal(pw.dirname(pw.root), 'C:\\')
     t.equal(
       pw.resolve('foo', '//?/y:/some/absolute/path'),
-      'Y:\\some\\absolute\\path'
+      'Y:\\some\\absolute\\path',
     )
     t.equal(
       pw.resolvePosix('foo', '//?/y:/some/absolute/path'),
-      '//?/Y:/some/absolute/path'
+      '//?/Y:/some/absolute/path',
     )
     t.equal(
       pw.resolve('d:\\x/y\\z\\a/../', '', '.', './/b'),
-      'D:\\x\\y\\z\\b'
+      'D:\\x\\y\\z\\b',
     )
     t.equal(
       pw.resolvePosix('d:\\x/y\\z\\a/../', '', '.', './/b'),
-      '//?/D:/x/y/z/b'
+      '//?/D:/x/y/z/b',
     )
     t.equal(pw.cwd.resolve('//?/C:/some/PATH'), pw.cwd)
     t.equal(pw.resolve('//?/D:/X/y\\z\\a/../B'), 'D:\\x\\y\\z\\b')
@@ -149,7 +149,7 @@ t.test('platform-specific', t => {
     const { PathScurry, PathScurryDarwin, Path, PathPosix } =
       await t.mockImport<typeof import('../dist/esm/index.js')>(
         '../dist/esm/index.js',
-        {}
+        {},
       )
     t.teardown(() => setCWD())
     setCWD('posix')
@@ -172,11 +172,11 @@ t.test('platform-specific', t => {
     t.equal(pw.cwd.resolve('../../../../../../../'), pw.root)
     t.equal(
       pw.resolve('foo', '//x/y/some/absolute/path'),
-      '/x/y/some/absolute/path'
+      '/x/y/some/absolute/path',
     )
     t.equal(
       pw.resolvePosix('foo', '//x/y/some/absolute/path'),
-      '/x/y/some/absolute/path'
+      '/x/y/some/absolute/path',
     )
     t.equal(pw.cwd.resolve('foo'), pw.cwd.resolve('x/../FOO'))
     t.end()
@@ -188,7 +188,7 @@ t.test('platform-specific', t => {
     const { PathScurry, PathScurryPosix, Path, PathPosix } =
       await t.mockImport<typeof import('../dist/esm/index.js')>(
         '../dist/esm/index.js',
-        {}
+        {},
       )
     t.teardown(() => setCWD())
     setCWD('posix')
@@ -244,22 +244,22 @@ t.test('readlink', async t => {
   t.equal(await onLink.readlink(), resolve(dir, 'hello'))
   t.equal(
     onLink.readlinkSync({ withFileTypes })?.fullpath(),
-    resolve(dir, 'hello')
+    resolve(dir, 'hello'),
   )
   t.equal(
     (await onLink.readlink({ withFileTypes }))?.fullpath(),
-    resolve(dir, 'hello')
+    resolve(dir, 'hello'),
   )
 
   t.equal(await pw.cwd.resolve('link').readlink(), pw.cwd.resolve('hello'))
   t.equal(
     await pw.cwd.resolve('dir/link').readlink(),
-    pw.cwd.resolve('hello')
+    pw.cwd.resolve('hello'),
   )
   t.equal(pw.cwd.resolve('link').readlinkSync(), pw.cwd.resolve('hello'))
   t.equal(
     pw.cwd.resolve('dir/link').readlinkSync(),
-    pw.cwd.resolve('hello')
+    pw.cwd.resolve('hello'),
   )
 
   t.equal(await pw.readlink('hello'), undefined)
@@ -365,7 +365,7 @@ t.test('readdir, simple basic', async t => {
   const pw = new PathScurry(td)
   t.match(
     new Set(await pw.readdir('dir')),
-    new Set([{ name: 'some' }, { name: 'entries' }])
+    new Set([{ name: 'some' }, { name: 'entries' }]),
   )
   // gut check
   t.same(
@@ -373,40 +373,40 @@ t.test('readdir, simple basic', async t => {
       pw.cwd.resolve('dir/some').isFile(),
       pw.cwd.resolve('dir/entries').isFile(),
     ],
-    [true, true]
+    [true, true],
   )
 
   t.match(
     new Set(await pw.readdir('dir', { withFileTypes: false })),
-    new Set(['some', 'entries'])
+    new Set(['some', 'entries']),
   )
   t.match(
     new Set(pw.readdirSync('dir', { withFileTypes: false })),
-    new Set(['some', 'entries'])
+    new Set(['some', 'entries']),
   )
   t.same(
     new Set(pw.readdirSync('.', { withFileTypes: false })),
-    new Set(['dir', 'link', 'file1', 'file2'])
+    new Set(['dir', 'link', 'file1', 'file2']),
   )
   t.same(
     new Set(await pw.readdir('', { withFileTypes: false })),
-    new Set(['dir', 'link', 'file1', 'file2'])
+    new Set(['dir', 'link', 'file1', 'file2']),
   )
   t.same(
     new Set(pw.readdirSync({ withFileTypes: false })),
-    new Set(['dir', 'link', 'file1', 'file2'])
+    new Set(['dir', 'link', 'file1', 'file2']),
   )
   t.same(
     new Set(await pw.readdir({ withFileTypes: false })),
-    new Set(['dir', 'link', 'file1', 'file2'])
+    new Set(['dir', 'link', 'file1', 'file2']),
   )
   t.same(
     new Set(pw.readdirSync().map(e => e.name)),
-    new Set(['dir', 'link', 'file1', 'file2'])
+    new Set(['dir', 'link', 'file1', 'file2']),
   )
   t.same(
     new Set((await pw.readdir()).map(e => e.name)),
-    new Set(['dir', 'link', 'file1', 'file2'])
+    new Set(['dir', 'link', 'file1', 'file2']),
   )
   t.same(pw.cwd.resolve('link').readdirSync(), [])
   t.same(pw.cwd.resolve('file1').readdirSync(), [])
@@ -429,7 +429,7 @@ t.test('readdir, simple basic', async t => {
         t.equal(er, null)
         t.match(
           new Set(entries),
-          new Set([{ name: 'some' }, { name: 'entries' }])
+          new Set([{ name: 'some' }, { name: 'entries' }]),
         )
         t.equal(sync, false, 'did not call cb synchronously')
         t.end()
@@ -443,7 +443,7 @@ t.test('readdir, simple basic', async t => {
         t.equal(er, null)
         t.match(
           new Set(entries),
-          new Set([{ name: 'some' }, { name: 'entries' }])
+          new Set([{ name: 'some' }, { name: 'entries' }]),
         )
         t.equal(sync, true, 'called cb synchronously')
         t.end()
@@ -521,7 +521,7 @@ t.test('readdir with provisionals', async t => {
     t.equal(pw.cwd.resolve('A').name, 'A')
     t.same(
       new Set(pw.readdirSync('', { withFileTypes: false })),
-      new Set(['a', 'b', 'c', 'd'])
+      new Set(['a', 'b', 'c', 'd']),
     )
     t.equal(pw.cwd.resolve('A').isUnknown(), false)
     t.equal(pw.cwd.resolve('A').isFile(), true)
@@ -534,7 +534,7 @@ t.test('readdir with provisionals', async t => {
     t.equal(pw2.cwd.resolve('a').isFile(), false)
     t.same(
       new Set(await pw2.readdir('', { withFileTypes: false })),
-      new Set(['a', 'b', 'c', 'd'])
+      new Set(['a', 'b', 'c', 'd']),
     )
     t.equal(pw2.cwd.resolve('a').isUnknown(), false)
     t.equal(pw2.cwd.resolve('a').isFile(), true)
@@ -550,7 +550,7 @@ t.test('readdir with provisionals', async t => {
     t.equal(pw.cwd.resolve('b').isFile(), false)
     t.same(
       new Set(pw.readdirSync('', { withFileTypes: false })),
-      new Set(['a', 'b', 'c', 'd'])
+      new Set(['a', 'b', 'c', 'd']),
     )
     t.equal(pw.cwd.resolve('b').isUnknown(), false)
     t.equal(pw.cwd.resolve('b').isFile(), true)
@@ -567,7 +567,7 @@ t.test('readdir with provisionals', async t => {
     })
     t.same(
       new Set(await pw2.readdir('', { withFileTypes: false })),
-      new Set(['a', 'b', 'c', 'd'])
+      new Set(['a', 'b', 'c', 'd']),
     )
     t.equal(pw2.cwd.resolve('b').isUnknown(), false)
     t.equal(pw2.cwd.resolve('b').isFile(), true)
@@ -599,7 +599,7 @@ t.test('readdir with provisionals', async t => {
     })
     t.same(
       new Set(pw.readdirSync('', { withFileTypes: false })),
-      new Set(['a', 'b', 'c', 'd'])
+      new Set(['a', 'b', 'c', 'd']),
     )
     t.match(pw.cwd.childrenCache().get(pw.cwd), {
       length: 4,
@@ -625,7 +625,7 @@ t.test('readdir with provisionals', async t => {
     })
     t.same(
       new Set(await pw2.readdir('', { withFileTypes: false })),
-      new Set(['a', 'b', 'c', 'd'])
+      new Set(['a', 'b', 'c', 'd']),
     )
     t.equal(pw2.cwd.resolve('b').isUnknown(), false)
     t.equal(pw2.cwd.resolve('b').isFile(), true)
@@ -685,7 +685,7 @@ t.test('readdir with provisionals', async t => {
     rimrafSync(td + '/b')
     t.same(
       new Set(pw.readdirSync('', { withFileTypes: false })),
-      new Set(['a', 'd'])
+      new Set(['a', 'd']),
     )
     t.match(pw.cwd.childrenCache().get(pw.cwd), {
       length: 3,
@@ -736,7 +736,7 @@ t.test('all the IFMTs!', async t => {
   const onlyOne = (
     t: Test,
     e: Path & { [k in keyof typeof base]: () => boolean },
-    pass: string = ''
+    pass: string = '',
   ) => {
     for (const k of Object.keys(base) as (keyof typeof base)[]) {
       t.equal(e[k](), k === pass, `${e.name} ${k} ${k === pass}`)
@@ -964,7 +964,7 @@ t.test('eloop', async t => {
       const onPath = new PathScurry(pw.resolve(p))
       t.equal(
         onPath.realpathSync({ withFileTypes: true })?.fullpath(),
-        syncResults[p]
+        syncResults[p],
       )
     }
     t.matchSnapshot(syncResults)
@@ -991,7 +991,7 @@ t.test('eloop', async t => {
       const onPath = new PathScurry(pw.resolve(p))
       t.equal(
         (await onPath.realpath({ withFileTypes: true }))?.fullpath(),
-        ar2[p]
+        ar2[p],
       )
       t.equal(await onPath.realpath(), ar2[p])
     }
@@ -1042,13 +1042,13 @@ t.test('walking', async t => {
         for (const follow of [false, undefined, true]) {
           for (const reuse of [false, true]) {
             const opts: WalkOptions | undefined =
-              !follow && !walkFilter && !filter && !optFirst
-                ? undefined
-                : {
-                    follow,
-                    filter,
-                    walkFilter,
-                  }
+              !follow && !walkFilter && !filter && !optFirst ?
+                undefined
+              : {
+                  follow,
+                  filter,
+                  walkFilter,
+                }
             const name = [
               `follow=${follow}`,
               `filter=${!!filter}`,
@@ -1058,9 +1058,9 @@ t.test('walking', async t => {
               let pw = new PathScurry(td)
               // if not following, then just take the default args when we
               // walk to get the entries, to cover that code path.
-              const syncWalk = opts
-                ? optFirst
-                  ? pw.walkSync({ ...opts, withFileTypes: true })
+              const syncWalk =
+                opts ?
+                  optFirst ? pw.walkSync({ ...opts, withFileTypes: true })
                   : pw.walkSync('', { ...opts, withFileTypes: true })
                 : pw.walkSync()
               const entries = new Set<PathBase>()
@@ -1090,9 +1090,9 @@ t.test('walking', async t => {
 
               t.test('async walk, objects', async t => {
                 if (!reuse) pw = new PathScurry(td)
-                const w = opts
-                  ? optFirst
-                    ? pw.walk({ ...opts, withFileTypes: true })
+                const w =
+                  opts ?
+                    optFirst ? pw.walk({ ...opts, withFileTypes: true })
                     : pw.walk('', { ...opts, withFileTypes: true })
                   : pw.walk()
                 const found = new Set<Path>()
@@ -1147,9 +1147,10 @@ t.test('walking', async t => {
 
               t.test('iterateSync', async t => {
                 if (!reuse) pw = new PathScurry(td)
-                const f = opts
-                  ? optFirst
-                    ? pw.iterateSync({ ...opts, withFileTypes: true })
+                const f =
+                  opts ?
+                    optFirst ?
+                      pw.iterateSync({ ...opts, withFileTypes: true })
                     : pw.iterateSync('', { ...opts, withFileTypes: true })
                   : pw.iterateSync()
                 const found = new Set<Path>()
@@ -1178,9 +1179,9 @@ t.test('walking', async t => {
 
               t.test('async iterate', async t => {
                 if (!reuse) pw = new PathScurry(td)
-                const f = opts
-                  ? optFirst
-                    ? pw.iterate({ ...opts, withFileTypes: true })
+                const f =
+                  opts ?
+                    optFirst ? pw.iterate({ ...opts, withFileTypes: true })
                     : pw.iterate('', { ...opts, withFileTypes: true })
                   : pw.iterate()
                 let found = new Set<Path>()
@@ -1214,9 +1215,9 @@ t.test('walking', async t => {
               t.test('stream', async t => {
                 if (!reuse) pw = new PathScurry(td)
                 const found = new Set<Path>()
-                const stream = opts
-                  ? optFirst
-                    ? pw.stream({ ...opts, withFileTypes: true })
+                const stream =
+                  opts ?
+                    optFirst ? pw.stream({ ...opts, withFileTypes: true })
                     : pw.stream('', { ...opts, withFileTypes: true })
                   : pw.stream()
                 stream.on('data', path => {
@@ -1249,9 +1250,10 @@ t.test('walking', async t => {
               t.test('streamSync', async t => {
                 if (!reuse) pw = new PathScurry(td)
                 const found = new Set<Path>()
-                const stream = opts
-                  ? optFirst
-                    ? pw.streamSync({ ...opts, withFileTypes: true })
+                const stream =
+                  opts ?
+                    optFirst ?
+                      pw.streamSync({ ...opts, withFileTypes: true })
                     : pw.streamSync('', { ...opts, withFileTypes: true })
                   : pw.streamSync()
                 stream.on('data', path => {
@@ -1586,7 +1588,7 @@ t.test('chdir', async t => {
   ps.chdir(ps.cwd.resolve('../../i/j/k/l'))
   t.equal(
     oldCwd.relative(),
-    relative(ps.cwd.fullpath(), oldCwd.fullpath())
+    relative(ps.cwd.fullpath(), oldCwd.fullpath()),
   )
   t.equal(a.relative(), relative(ps.cwd.fullpath(), a.fullpath()))
   t.equal(bc.relative(), relative(ps.cwd.fullpath(), bc.fullpath()))
@@ -1614,7 +1616,7 @@ t.test('chdir', async t => {
       rr: oldRoot.relative(),
       rrp: oldRoot.relativePosix(),
     },
-    expect
+    expect,
   )
 })
 
@@ -1627,15 +1629,15 @@ t.test('link targets in multiply nested symlinks', async t => {
       foo: t.fixture('symlink', '../dir_foo'),
     },
     dir_foo: {
-      'foo.txt': 'hello'
-    }
+      'foo.txt': 'hello',
+    },
   })
   t.test('async', async t => {
     const p = new PathScurry(cwd)
     const link = p.cwd.resolve('./dir_baz/bar/foo')
     t.ok(await (await link.readlink())?.lstat(), 'found the link target')
   })
-  t.test('sync', t =>  {
+  t.test('sync', t => {
     const p = new PathScurry(cwd)
     const link = p.cwd.resolve('./dir_baz/bar/foo')
     t.ok(link.readlinkSync()?.lstatSync(), 'found the link target')

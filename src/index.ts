@@ -3,7 +3,6 @@ import { posix, win32 } from 'node:path'
 
 import { fileURLToPath } from 'node:url'
 
-import * as actualFS from 'node:fs'
 import {
   lstatSync,
   readdir as readdirCB,
@@ -11,13 +10,16 @@ import {
   readlinkSync,
   realpathSync as rps,
 } from 'fs'
+import * as actualFS from 'node:fs'
+
 const realpathSync = rps.native
 // TODO: test perf of fs/promises realpath vs realpathCB,
 // since the promises one uses realpath.native
+
 import { lstat, readdir, readlink, realpath } from 'node:fs/promises'
 
-import type { Dirent, Stats } from 'node:fs'
 import { Minipass } from 'minipass'
+import type { Dirent, Stats } from 'node:fs'
 
 /**
  * An object that will be used to override the default `fs`
@@ -41,11 +43,11 @@ export interface FSOption {
   readdir?: (
     path: string,
     options: { withFileTypes: true },
-    cb: (er: NodeJS.ErrnoException | null, entries?: Dirent[]) => any
+    cb: (er: NodeJS.ErrnoException | null, entries?: Dirent[]) => any,
   ) => void
   readdirSync?: (
     path: string,
-    options: { withFileTypes: true }
+    options: { withFileTypes: true },
   ) => Dirent[]
   readlinkSync?: (path: string) => string
   realpathSync?: (path: string) => string
@@ -53,7 +55,7 @@ export interface FSOption {
     lstat?: (path: string) => Promise<Stats>
     readdir?: (
       path: string,
-      options: { withFileTypes: true }
+      options: { withFileTypes: true },
     ) => Promise<Dirent[]>
     readlink?: (path: string) => Promise<string>
     realpath?: (path: string) => Promise<string>
@@ -67,7 +69,7 @@ interface FSValue {
   readdir: (
     path: string,
     options: { withFileTypes: true },
-    cb: (er: NodeJS.ErrnoException | null, entries?: Dirent[]) => any
+    cb: (er: NodeJS.ErrnoException | null, entries?: Dirent[]) => any,
   ) => void
   readdirSync: (path: string, options: { withFileTypes: true }) => Dirent[]
   readlinkSync: (path: string) => string
@@ -76,7 +78,7 @@ interface FSValue {
     lstat: (path: string) => Promise<Stats>
     readdir: (
       path: string,
-      options: { withFileTypes: true }
+      options: { withFileTypes: true },
     ) => Promise<Dirent[]>
     readlink: (path: string) => Promise<string>
     realpath: (path: string) => Promise<string>
@@ -101,16 +103,16 @@ const defaultFS: FSValue = {
 
 // if they just gave us require('fs') then use our default
 const fsFromOption = (fsOption?: FSOption): FSValue =>
-  !fsOption || fsOption === defaultFS || fsOption === actualFS
-    ? defaultFS
-    : {
-        ...defaultFS,
-        ...fsOption,
-        promises: {
-          ...defaultFS.promises,
-          ...(fsOption.promises || {}),
-        },
-      }
+  !fsOption || fsOption === defaultFS || fsOption === actualFS ?
+    defaultFS
+  : {
+      ...defaultFS,
+      ...fsOption,
+      promises: {
+        ...defaultFS.promises,
+        ...(fsOption.promises || {}),
+      },
+    }
 
 // turn something like //?/c:/ into c:\
 const uncDriveRegexp = /^\\\\\?\\([a-z]:)\\?$/i
@@ -162,21 +164,14 @@ const ENOCHILD = ENOTDIR | ENOENT | ENOREALPATH
 const TYPEMASK = 0b0011_1111_1111
 
 const entToType = (s: Dirent | Stats) =>
-  s.isFile()
-    ? IFREG
-    : s.isDirectory()
-    ? IFDIR
-    : s.isSymbolicLink()
-    ? IFLNK
-    : s.isCharacterDevice()
-    ? IFCHR
-    : s.isBlockDevice()
-    ? IFBLK
-    : s.isSocket()
-    ? IFSOCK
-    : s.isFIFO()
-    ? IFIFO
-    : UNKNOWN
+  s.isFile() ? IFREG
+  : s.isDirectory() ? IFDIR
+  : s.isSymbolicLink() ? IFLNK
+  : s.isCharacterDevice() ? IFCHR
+  : s.isBlockDevice() ? IFBLK
+  : s.isSocket() ? IFSOCK
+  : s.isFIFO() ? IFIFO
+  : UNKNOWN
 
 // normalize unicode path names
 const normalizeCache = new Map<string, string>()
@@ -433,7 +428,7 @@ export abstract class PathBase implements Dirent {
     roots: { [k: string]: PathBase },
     nocase: boolean,
     children: ChildrenCache,
-    opts: PathOpts
+    opts: PathOpts,
   ) {
     this.name = name
     this.#matchName = nocase ? normalizeNocase(name) : normalize(name)
@@ -494,8 +489,9 @@ export abstract class PathBase implements Dirent {
     const rootPath = this.getRootString(path)
     const dir = path.substring(rootPath.length)
     const dirParts = dir.split(this.splitSep)
-    const result: PathBase = rootPath
-      ? this.getRoot(rootPath).#resolveParts(dirParts)
+    const result: PathBase =
+      rootPath ?
+        this.getRoot(rootPath).#resolveParts(dirParts)
       : this.#resolveParts(dirParts)
     return result
   }
@@ -550,9 +546,8 @@ export abstract class PathBase implements Dirent {
 
     // find the child
     const children = this.children()
-    const name = this.nocase
-      ? normalizeNocase(pathPart)
-      : normalize(pathPart)
+    const name =
+      this.nocase ? normalizeNocase(pathPart) : normalize(pathPart)
     for (const p of children) {
       if (p.#matchName === name) {
         return p
@@ -563,9 +558,8 @@ export abstract class PathBase implements Dirent {
     // actually exist.  If we know the parent isn't a dir, then
     // in fact it CAN'T exist.
     const s = this.parent ? this.sep : ''
-    const fullpath = this.#fullpath
-      ? this.#fullpath + s + pathPart
-      : undefined
+    const fullpath =
+      this.#fullpath ? this.#fullpath + s + pathPart : undefined
     const pchild = this.newChild(pathPart, UNKNOWN, {
       ...opts,
       parent: this,
@@ -673,23 +667,17 @@ export abstract class PathBase implements Dirent {
   }
 
   getType(): Type {
-    return this.isUnknown()
-      ? 'Unknown'
-      : this.isDirectory()
-      ? 'Directory'
-      : this.isFile()
-      ? 'File'
-      : this.isSymbolicLink()
-      ? 'SymbolicLink'
-      : this.isFIFO()
-      ? 'FIFO'
-      : this.isCharacterDevice()
-      ? 'CharacterDevice'
-      : this.isBlockDevice()
-      ? 'BlockDevice'
-      : /* c8 ignore start */ this.isSocket()
-      ? 'Socket'
+    return (
+      this.isUnknown() ? 'Unknown'
+      : this.isDirectory() ? 'Directory'
+      : this.isFile() ? 'File'
+      : this.isSymbolicLink() ? 'SymbolicLink'
+      : this.isFIFO() ? 'FIFO'
+      : this.isCharacterDevice() ? 'CharacterDevice'
+      : this.isBlockDevice() ? 'BlockDevice'
+      : /* c8 ignore start */ this.isSocket() ? 'Socket'
       : 'Unknown'
+    )
     /* c8 ignore stop */
   }
 
@@ -838,8 +826,8 @@ export abstract class PathBase implements Dirent {
    * directly.
    */
   isNamed(n: string): boolean {
-    return !this.nocase
-      ? this.#matchName === normalize(n)
+    return !this.nocase ?
+        this.#matchName === normalize(n)
       : this.#matchName === normalizeNocase(n)
   }
 
@@ -896,7 +884,7 @@ export abstract class PathBase implements Dirent {
     /* c8 ignore stop */
     try {
       const read = this.#fs.readlinkSync(this.fullpath())
-      const linkTarget = (this.parent.realpathSync())?.resolve(read)
+      const linkTarget = this.parent.realpathSync()?.resolve(read)
       if (linkTarget) {
         return (this.#linkTarget = linkTarget)
       }
@@ -1021,9 +1009,8 @@ export abstract class PathBase implements Dirent {
   #readdirMaybePromoteChild(e: Dirent, c: Children): PathBase | undefined {
     for (let p = c.provisional; p < c.length; p++) {
       const pchild = c[p]
-      const name = this.nocase
-        ? normalizeNocase(e.name)
-        : normalize(e.name)
+      const name =
+        this.nocase ? normalizeNocase(e.name) : normalize(e.name)
       if (name !== pchild!.#matchName) {
         continue
       }
@@ -1036,7 +1023,7 @@ export abstract class PathBase implements Dirent {
     e: Dirent,
     p: PathBase,
     index: number,
-    c: Children
+    c: Children,
   ): PathBase {
     const v = p.name
     // retain any other flags, but set ifmt from dirent
@@ -1144,7 +1131,7 @@ export abstract class PathBase implements Dirent {
 
   #onReaddirCB: ((
     er: NodeJS.ErrnoException | null,
-    entries: Path[]
+    entries: Path[],
   ) => any)[] = []
   #readdirCBInFlight: boolean = false
   #callOnReaddirCB(children: Path[]) {
@@ -1172,7 +1159,7 @@ export abstract class PathBase implements Dirent {
    */
   readdirCB(
     cb: (er: NodeJS.ErrnoException | null, entries: PathBase[]) => any,
-    allowZalgo: boolean = false
+    allowZalgo: boolean = false,
   ): void {
     if (!this.canReaddir()) {
       if (allowZalgo) cb(null, [])
@@ -1246,7 +1233,7 @@ export abstract class PathBase implements Dirent {
       let resolve: () => void = () => {}
       /* c8 ignore stop */
       this.#asyncReaddirInFlight = new Promise<void>(
-        res => (resolve = res)
+        res => (resolve = res),
       )
       try {
         for (const e of await this.#fs.promises.readdir(fullpath, {
@@ -1309,7 +1296,7 @@ export abstract class PathBase implements Dirent {
 
   shouldWalk(
     dirs: Set<PathBase | undefined>,
-    walkFilter?: (e: PathBase) => boolean
+    walkFilter?: (e: PathBase) => boolean,
   ): boolean {
     return (
       (this.#type & IFDIR) === IFDIR &&
@@ -1411,7 +1398,7 @@ export class PathWin32 extends PathBase {
     roots: { [k: string]: PathBase },
     nocase: boolean,
     children: ChildrenCache,
-    opts: PathOpts
+    opts: PathOpts,
   ) {
     super(name, type, root, roots, nocase, children, opts)
   }
@@ -1427,7 +1414,7 @@ export class PathWin32 extends PathBase {
       this.roots,
       this.nocase,
       this.childrenCache(),
-      opts
+      opts,
     )
   }
 
@@ -1455,7 +1442,7 @@ export class PathWin32 extends PathBase {
     // otherwise, have to create a new one.
     return (this.roots[rootPath] = new PathScurryWin32(
       rootPath,
-      this
+      this,
     ).root)
   }
 
@@ -1502,7 +1489,7 @@ export class PathPosix extends PathBase {
     roots: { [k: string]: PathBase },
     nocase: boolean,
     children: ChildrenCache,
-    opts: PathOpts
+    opts: PathOpts,
   ) {
     super(name, type, root, roots, nocase, children, opts)
   }
@@ -1532,7 +1519,7 @@ export class PathPosix extends PathBase {
       this.roots,
       this.nocase,
       this.childrenCache(),
-      opts
+      opts,
     )
   }
 }
@@ -1627,7 +1614,7 @@ export abstract class PathScurryBase {
       nocase,
       childrenCacheSize = 16 * 1024,
       fs = defaultFS,
-    }: PathScurryOpts = {}
+    }: PathScurryOpts = {},
   ) {
     this.#fs = fsFromOption(fs)
     if (cwd instanceof URL || cwd.startsWith('file://')) {
@@ -1650,7 +1637,7 @@ export abstract class PathScurryBase {
     /* c8 ignore start */
     if (nocase === undefined) {
       throw new TypeError(
-        'must provide nocase setting to PathScurryBase ctor'
+        'must provide nocase setting to PathScurryBase ctor',
       )
     }
     /* c8 ignore stop */
@@ -1836,21 +1823,21 @@ export abstract class PathScurryBase {
   readdir(entry: PathBase | string): Promise<PathBase[]>
   readdir(
     entry: PathBase | string,
-    opts: { withFileTypes: true }
+    opts: { withFileTypes: true },
   ): Promise<PathBase[]>
   readdir(
     entry: PathBase | string,
-    opts: { withFileTypes: false }
+    opts: { withFileTypes: false },
   ): Promise<string[]>
   readdir(
     entry: PathBase | string,
-    opts: { withFileTypes: boolean }
+    opts: { withFileTypes: boolean },
   ): Promise<PathBase[] | string[]>
   async readdir(
     entry: PathBase | string | { withFileTypes: boolean } = this.cwd,
     opts: { withFileTypes: boolean } = {
       withFileTypes: true,
-    }
+    },
   ): Promise<PathBase[] | string[]> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -1877,21 +1864,21 @@ export abstract class PathScurryBase {
   readdirSync(entry: PathBase | string): PathBase[]
   readdirSync(
     entry: PathBase | string,
-    opts: { withFileTypes: true }
+    opts: { withFileTypes: true },
   ): PathBase[]
   readdirSync(
     entry: PathBase | string,
-    opts: { withFileTypes: false }
+    opts: { withFileTypes: false },
   ): string[]
   readdirSync(
     entry: PathBase | string,
-    opts: { withFileTypes: boolean }
+    opts: { withFileTypes: boolean },
   ): PathBase[] | string[]
   readdirSync(
     entry: PathBase | string | { withFileTypes: boolean } = this.cwd,
     opts: { withFileTypes: boolean } = {
       withFileTypes: true,
-    }
+    },
   ): PathBase[] | string[] {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -1925,7 +1912,7 @@ export abstract class PathScurryBase {
    * mutated.
    */
   async lstat(
-    entry: string | PathBase = this.cwd
+    entry: string | PathBase = this.cwd,
   ): Promise<PathBase | undefined> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -1965,21 +1952,21 @@ export abstract class PathScurryBase {
   }): Promise<PathBase | string | undefined>
   readlink(
     entry: string | PathBase,
-    opt?: { withFileTypes: false }
+    opt?: { withFileTypes: false },
   ): Promise<string | undefined>
   readlink(
     entry: string | PathBase,
-    opt: { withFileTypes: true }
+    opt: { withFileTypes: true },
   ): Promise<PathBase | undefined>
   readlink(
     entry: string | PathBase,
-    opt: { withFileTypes: boolean }
+    opt: { withFileTypes: boolean },
   ): Promise<string | PathBase | undefined>
   async readlink(
     entry: string | PathBase | { withFileTypes: boolean } = this.cwd,
     { withFileTypes }: { withFileTypes: boolean } = {
       withFileTypes: false,
-    }
+    },
   ): Promise<string | PathBase | undefined> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -2002,21 +1989,21 @@ export abstract class PathScurryBase {
   }): PathBase | string | undefined
   readlinkSync(
     entry: string | PathBase,
-    opt?: { withFileTypes: false }
+    opt?: { withFileTypes: false },
   ): string | undefined
   readlinkSync(
     entry: string | PathBase,
-    opt: { withFileTypes: true }
+    opt: { withFileTypes: true },
   ): PathBase | undefined
   readlinkSync(
     entry: string | PathBase,
-    opt: { withFileTypes: boolean }
+    opt: { withFileTypes: boolean },
   ): string | PathBase | undefined
   readlinkSync(
     entry: string | PathBase | { withFileTypes: boolean } = this.cwd,
     { withFileTypes }: { withFileTypes: boolean } = {
       withFileTypes: false,
-    }
+    },
   ): string | PathBase | undefined {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -2049,21 +2036,21 @@ export abstract class PathScurryBase {
   }): Promise<PathBase | string | undefined>
   realpath(
     entry: string | PathBase,
-    opt?: { withFileTypes: false }
+    opt?: { withFileTypes: false },
   ): Promise<string | undefined>
   realpath(
     entry: string | PathBase,
-    opt: { withFileTypes: true }
+    opt: { withFileTypes: true },
   ): Promise<PathBase | undefined>
   realpath(
     entry: string | PathBase,
-    opt: { withFileTypes: boolean }
+    opt: { withFileTypes: boolean },
   ): Promise<string | PathBase | undefined>
   async realpath(
     entry: string | PathBase | { withFileTypes: boolean } = this.cwd,
     { withFileTypes }: { withFileTypes: boolean } = {
       withFileTypes: false,
-    }
+    },
   ): Promise<string | PathBase | undefined> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -2083,21 +2070,21 @@ export abstract class PathScurryBase {
   }): PathBase | string | undefined
   realpathSync(
     entry: string | PathBase,
-    opt?: { withFileTypes: false }
+    opt?: { withFileTypes: false },
   ): string | undefined
   realpathSync(
     entry: string | PathBase,
-    opt: { withFileTypes: true }
+    opt: { withFileTypes: true },
   ): PathBase | undefined
   realpathSync(
     entry: string | PathBase,
-    opt: { withFileTypes: boolean }
+    opt: { withFileTypes: boolean },
   ): string | PathBase | undefined
   realpathSync(
     entry: string | PathBase | { withFileTypes: boolean } = this.cwd,
     { withFileTypes }: { withFileTypes: boolean } = {
       withFileTypes: false,
-    }
+    },
   ): string | PathBase | undefined {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -2119,26 +2106,26 @@ export abstract class PathScurryBase {
    */
   walk(): Promise<PathBase[]>
   walk(
-    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset,
   ): Promise<PathBase[]>
   walk(opts: WalkOptionsWithFileTypesFalse): Promise<string[]>
   walk(opts: WalkOptions): Promise<string[] | PathBase[]>
   walk(entry: string | PathBase): Promise<PathBase[]>
   walk(
     entry: string | PathBase,
-    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset,
   ): Promise<PathBase[]>
   walk(
     entry: string | PathBase,
-    opts: WalkOptionsWithFileTypesFalse
+    opts: WalkOptionsWithFileTypesFalse,
   ): Promise<string[]>
   walk(
     entry: string | PathBase,
-    opts: WalkOptions
+    opts: WalkOptions,
   ): Promise<PathBase[] | string[]>
   async walk(
     entry: string | PathBase | WalkOptions = this.cwd,
-    opts: WalkOptions = {}
+    opts: WalkOptions = {},
   ): Promise<PathBase[] | string[]> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -2159,7 +2146,7 @@ export abstract class PathScurryBase {
     const dirs = new Set<PathBase>()
     const walk = (
       dir: PathBase,
-      cb: (er?: NodeJS.ErrnoException) => void
+      cb: (er?: NodeJS.ErrnoException) => void,
     ) => {
       dirs.add(dir)
       dir.readdirCB((er, entries) => {
@@ -2183,7 +2170,7 @@ export abstract class PathScurryBase {
             e.realpath()
               .then(r => (r?.isUnknown() ? r.lstat() : r))
               .then(r =>
-                r?.shouldWalk(dirs, walkFilter) ? walk(r, next) : next()
+                r?.shouldWalk(dirs, walkFilter) ? walk(r, next) : next(),
               )
           } else {
             if (e.shouldWalk(dirs, walkFilter)) {
@@ -2217,26 +2204,26 @@ export abstract class PathScurryBase {
    */
   walkSync(): PathBase[]
   walkSync(
-    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset,
   ): PathBase[]
   walkSync(opts: WalkOptionsWithFileTypesFalse): string[]
   walkSync(opts: WalkOptions): string[] | PathBase[]
   walkSync(entry: string | PathBase): PathBase[]
   walkSync(
     entry: string | PathBase,
-    opts: WalkOptionsWithFileTypesUnset | WalkOptionsWithFileTypesTrue
+    opts: WalkOptionsWithFileTypesUnset | WalkOptionsWithFileTypesTrue,
   ): PathBase[]
   walkSync(
     entry: string | PathBase,
-    opts: WalkOptionsWithFileTypesFalse
+    opts: WalkOptionsWithFileTypesFalse,
   ): string[]
   walkSync(
     entry: string | PathBase,
-    opts: WalkOptions
+    opts: WalkOptions,
   ): PathBase[] | string[]
   walkSync(
     entry: string | PathBase | WalkOptions = this.cwd,
-    opts: WalkOptions = {}
+    opts: WalkOptions = {},
   ): PathBase[] | string[] {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -2297,28 +2284,28 @@ export abstract class PathScurryBase {
    */
   iterate(): AsyncGenerator<PathBase, void, void>
   iterate(
-    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset,
   ): AsyncGenerator<PathBase, void, void>
   iterate(
-    opts: WalkOptionsWithFileTypesFalse
+    opts: WalkOptionsWithFileTypesFalse,
   ): AsyncGenerator<string, void, void>
   iterate(opts: WalkOptions): AsyncGenerator<string | PathBase, void, void>
   iterate(entry: string | PathBase): AsyncGenerator<PathBase, void, void>
   iterate(
     entry: string | PathBase,
-    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset,
   ): AsyncGenerator<PathBase, void, void>
   iterate(
     entry: string | PathBase,
-    opts: WalkOptionsWithFileTypesFalse
+    opts: WalkOptionsWithFileTypesFalse,
   ): AsyncGenerator<string, void, void>
   iterate(
     entry: string | PathBase,
-    opts: WalkOptions
+    opts: WalkOptions,
   ): AsyncGenerator<PathBase | string, void, void>
   iterate(
     entry: string | PathBase | WalkOptions = this.cwd,
-    options: WalkOptions = {}
+    options: WalkOptions = {},
   ): AsyncGenerator<PathBase | string, void, void> {
     // iterating async over the stream is significantly more performant,
     // especially in the warm-cache scenario, because it buffers up directory
@@ -2343,28 +2330,28 @@ export abstract class PathScurryBase {
 
   iterateSync(): Generator<PathBase, void, void>
   iterateSync(
-    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset,
   ): Generator<PathBase, void, void>
   iterateSync(
-    opts: WalkOptionsWithFileTypesFalse
+    opts: WalkOptionsWithFileTypesFalse,
   ): Generator<string, void, void>
   iterateSync(opts: WalkOptions): Generator<string | PathBase, void, void>
   iterateSync(entry: string | PathBase): Generator<PathBase, void, void>
   iterateSync(
     entry: string | PathBase,
-    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset,
   ): Generator<PathBase, void, void>
   iterateSync(
     entry: string | PathBase,
-    opts: WalkOptionsWithFileTypesFalse
+    opts: WalkOptionsWithFileTypesFalse,
   ): Generator<string, void, void>
   iterateSync(
     entry: string | PathBase,
-    opts: WalkOptions
+    opts: WalkOptions,
   ): Generator<PathBase | string, void, void>
   *iterateSync(
     entry: string | PathBase | WalkOptions = this.cwd,
-    opts: WalkOptions = {}
+    opts: WalkOptions = {},
   ): Generator<PathBase | string, void, void> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -2408,26 +2395,26 @@ export abstract class PathScurryBase {
    */
   stream(): Minipass<PathBase>
   stream(
-    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset,
   ): Minipass<PathBase>
   stream(opts: WalkOptionsWithFileTypesFalse): Minipass<string>
   stream(opts: WalkOptions): Minipass<string | PathBase>
   stream(entry: string | PathBase): Minipass<PathBase>
   stream(
     entry: string | PathBase,
-    opts: WalkOptionsWithFileTypesUnset | WalkOptionsWithFileTypesTrue
+    opts: WalkOptionsWithFileTypesUnset | WalkOptionsWithFileTypesTrue,
   ): Minipass<PathBase>
   stream(
     entry: string | PathBase,
-    opts: WalkOptionsWithFileTypesFalse
+    opts: WalkOptionsWithFileTypesFalse,
   ): Minipass<string>
   stream(
     entry: string | PathBase,
-    opts: WalkOptions
+    opts: WalkOptions,
   ): Minipass<string> | Minipass<PathBase>
   stream(
     entry: string | PathBase | WalkOptions = this.cwd,
-    opts: WalkOptions = {}
+    opts: WalkOptions = {},
   ): Minipass<string> | Minipass<PathBase> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -2463,7 +2450,7 @@ export abstract class PathScurryBase {
         const onReaddir = (
           er: null | NodeJS.ErrnoException,
           entries: PathBase[],
-          didRealpaths: boolean = false
+          didRealpaths: boolean = false,
         ) => {
           /* c8 ignore start */
           if (er) return results.emit('error', er)
@@ -2476,14 +2463,14 @@ export abstract class PathScurryBase {
                   e
                     .realpath()
                     .then((r: PathBase | undefined) =>
-                      r?.isUnknown() ? r.lstat() : r
-                    )
+                      r?.isUnknown() ? r.lstat() : r,
+                    ),
                 )
               }
             }
             if (promises.length) {
               Promise.all(promises).then(() =>
-                onReaddir(null, entries, true)
+                onReaddir(null, entries, true),
               )
               return
             }
@@ -2532,26 +2519,26 @@ export abstract class PathScurryBase {
    */
   streamSync(): Minipass<PathBase>
   streamSync(
-    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset
+    opts: WalkOptionsWithFileTypesTrue | WalkOptionsWithFileTypesUnset,
   ): Minipass<PathBase>
   streamSync(opts: WalkOptionsWithFileTypesFalse): Minipass<string>
   streamSync(opts: WalkOptions): Minipass<string | PathBase>
   streamSync(entry: string | PathBase): Minipass<PathBase>
   streamSync(
     entry: string | PathBase,
-    opts: WalkOptionsWithFileTypesUnset | WalkOptionsWithFileTypesTrue
+    opts: WalkOptionsWithFileTypesUnset | WalkOptionsWithFileTypesTrue,
   ): Minipass<PathBase>
   streamSync(
     entry: string | PathBase,
-    opts: WalkOptionsWithFileTypesFalse
+    opts: WalkOptionsWithFileTypesFalse,
   ): Minipass<string>
   streamSync(
     entry: string | PathBase,
-    opts: WalkOptions
+    opts: WalkOptions,
   ): Minipass<string> | Minipass<PathBase>
   streamSync(
     entry: string | PathBase | WalkOptions = this.cwd,
-    opts: WalkOptions = {}
+    opts: WalkOptions = {},
   ): Minipass<string> | Minipass<PathBase> {
     if (typeof entry === 'string') {
       entry = this.cwd.resolve(entry)
@@ -2693,7 +2680,7 @@ export class PathScurryWin32 extends PathScurryBase {
 
   constructor(
     cwd: URL | string = process.cwd(),
-    opts: PathScurryOpts = {}
+    opts: PathScurryOpts = {},
   ) {
     const { nocase = true } = opts
     super(cwd, win32, '\\', { ...opts, nocase })
@@ -2724,7 +2711,7 @@ export class PathScurryWin32 extends PathScurryBase {
       this.roots,
       this.nocase,
       this.childrenCache(),
-      { fs }
+      { fs },
     )
   }
 
@@ -2752,7 +2739,7 @@ export class PathScurryPosix extends PathScurryBase {
   sep: '/' = '/'
   constructor(
     cwd: URL | string = process.cwd(),
-    opts: PathScurryOpts = {}
+    opts: PathScurryOpts = {},
   ) {
     const { nocase = false } = opts
     super(cwd, posix, '/', { ...opts, nocase })
@@ -2777,7 +2764,7 @@ export class PathScurryPosix extends PathScurryBase {
       this.roots,
       this.nocase,
       this.childrenCache(),
-      { fs }
+      { fs },
     )
   }
 
@@ -2800,7 +2787,7 @@ export class PathScurryPosix extends PathScurryBase {
 export class PathScurryDarwin extends PathScurryPosix {
   constructor(
     cwd: URL | string = process.cwd(),
-    opts: PathScurryOpts = {}
+    opts: PathScurryOpts = {},
   ) {
     const { nocase = true } = opts
     super(cwd, { ...opts, nocase })
@@ -2825,9 +2812,7 @@ export const PathScurry:
   | typeof PathScurryWin32
   | typeof PathScurryDarwin
   | typeof PathScurryPosix =
-  process.platform === 'win32'
-    ? PathScurryWin32
-    : process.platform === 'darwin'
-    ? PathScurryDarwin
-    : PathScurryPosix
+  process.platform === 'win32' ? PathScurryWin32
+  : process.platform === 'darwin' ? PathScurryDarwin
+  : PathScurryPosix
 export type PathScurry = PathScurryBase | InstanceType<typeof PathScurry>

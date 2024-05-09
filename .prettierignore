@@ -1,3 +1,8 @@
+/.tshy
+/package.json
+/test/fixtures
+/package-lock.json
+/scripts
 /node_modules
 /example
 /.github
