@@ -516,6 +516,11 @@ pathname matches, due to unicode normalization mismatches.
 Always use this method instead of testing the `path.name`
 property directly.
 
+#### `path.isCWD`
+
+Set to true if this `Path` object is the current working
+directory of the `PathScurry` collection that contains it.
+
 #### `path.getType()`
 
 Returns the type of the Path object, `'File'`, `'Directory'`,

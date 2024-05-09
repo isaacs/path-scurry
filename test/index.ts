@@ -137,6 +137,10 @@ t.test('platform-specific', t => {
     t.equal(pw.resolve('//prp1/'), 'C:\\prp1')
     t.equal(pw.resolvePosix('//prp1/'), '//?/C:/prp1')
     t.equal(pw.cwd.resolve('../../../../../../../'), pw.root)
+    pw.chdir(pw.root)
+    t.equal(pw.relativePosix('C:/some'), 'some')
+    t.equal(pw.relative('C:/some/PATH'), 'some\\path')
+    t.equal(pw.relativePosix('C:/some/PATH'), 'some/path')
     t.equal(new PathScurry('/prp2').cwd.fullpath(), 'C:\\prp2')
     t.equal(new PathScurry('\\prp3').resolve(), 'C:\\prp3')
     t.equal(new PathScurry('\\prp3').resolvePosix(), '//?/C:/prp3')
@@ -179,6 +183,10 @@ t.test('platform-specific', t => {
       '/x/y/some/absolute/path',
     )
     t.equal(pw.cwd.resolve('foo'), pw.cwd.resolve('x/../FOO'))
+    pw.chdir(pw.root)
+    t.equal(pw.relativePosix('/some'), 'some')
+    t.equal(pw.relative('/some/PATH'), 'some/path')
+    t.equal(pw.relativePosix('/some/PATH'), 'some/path')
     t.end()
   })
 
@@ -206,6 +214,10 @@ t.test('platform-specific', t => {
     t.equal(pw.cwd.resolve('../../../../../../../'), pw.root)
     t.equal(pw.cwd.resolve('foo'), pw.cwd.resolve('x/../foo'))
     t.not(pw.cwd.resolve('foo'), pw.cwd.resolve('x/../FOO'))
+    pw.chdir(pw.root)
+    t.equal(pw.relativePosix('/some'), 'some')
+    t.equal(pw.relative('/some/PATH'), 'some/PATH')
+    t.equal(pw.relativePosix('/some/PATH'), 'some/PATH')
     t.end()
   })
 

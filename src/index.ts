@@ -300,6 +300,12 @@ export abstract class PathBase implements Dirent {
   nocase: boolean
 
   /**
+   * boolean indicating that this path is the current working directory
+   * of the PathScurry collection that contains it.
+   */
+  isCWD: boolean = false
+
+  /**
    * the string or regexp used to split paths. On posix, it is `'/'`, and on
    * windows it is a RegExp matching either `'/'` or `'\\'`
    */
@@ -581,6 +587,7 @@ export abstract class PathBase implements Dirent {
    * the cwd, then this ends up being equivalent to the fullpath()
    */
   relative(): string {
+    if (this.isCWD) return ''
     if (this.#relative !== undefined) {
       return this.#relative
     }
@@ -601,6 +608,7 @@ export abstract class PathBase implements Dirent {
    */
   relativePosix(): string {
     if (this.sep === '/') return this.relative()
+    if (this.isCWD) return ''
     if (this.#relativePosix !== undefined) return this.#relativePosix
     const name = this.name
     const p = this.parent
@@ -1348,6 +1356,8 @@ export abstract class PathBase implements Dirent {
    */
   [setAsCwd](oldCwd: PathBase): void {
     if (oldCwd === this) return
+    oldCwd.isCWD = false
+    this.isCWD = true
 
     const changed = new Set<PathBase>([])
     let rp = []
