@@ -65,7 +65,7 @@
     "typecheck": true
   },
   "engines": {
-    "node": ">=16 || 14 >=14.17"
+    "node": ">=16 || 14 >=14.18"
   },
   "funding": {
     "url": "https://github.com/sponsors/isaacs"
