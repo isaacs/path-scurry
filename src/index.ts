@@ -416,6 +416,8 @@ export abstract class PathBase implements Dirent {
   /**
    * Deprecated alias for Dirent['parentPath'] Somewhat counterintuitively,
    * this property refers to the *parent* path, not the path object itself.
+   *
+   * @deprecated
    */
   get path(): string {
     return this.parentPath
