@@ -6,7 +6,7 @@ jobs:
   build:
     strategy:
       matrix:
-        node-version: [v14.x, v16.x, v18.x, v19.x]
+        node-version: [v18.x, v20.x, v22.x]
         platform:
         - os: ubuntu-latest
           shell: bash
