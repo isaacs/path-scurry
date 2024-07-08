@@ -3,6 +3,7 @@
 /test/fixtures
 /package-lock.json
 /scripts
+!/scripts/benchmark*.ts
 /node_modules
 /example
 /.github

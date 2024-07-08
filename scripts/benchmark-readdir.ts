@@ -27,7 +27,8 @@ import { Dir, Dirent, opendirSync, writeFileSync } from 'fs'
 import { opendir, readdir } from 'fs/promises'
 import { mkdirpSync } from 'mkdirp'
 import { cpus } from 'os'
-import { resolve } from 'path'
+import { dirname, resolve } from 'path'
+import { fileURLToPath } from 'url'
 // import { rimrafSync } from 'rimraf'
 
 // depth to go in
@@ -35,7 +36,7 @@ const D = 6
 // count of items to put in each folder
 const C = 10
 // max number of things to make, in total
-const max: number = +process.argv[2] || 100_000
+const max: number = +(process.argv[2] || 100_000)
 let totalCreated = 0
 let saidDone = false
 const sayDone = () => {
@@ -51,11 +52,12 @@ const sayCreating = () => {
   saidCreating = true
   process.stdout.write(`Creating ${max} file system entries...\r`)
 }
-const sayCreated = process.stdout.isTTY
-  ? () => {
+const sayCreated =
+  process.stdout.isTTY ?
+    () => {
       if (totalCreated % 1000 === 0) {
         process.stdout.write(
-          `Creating ${max} file system entries...${totalCreated}          \r`
+          `Creating ${max} file system entries...${totalCreated}          \r`,
         )
       }
     }
@@ -65,7 +67,7 @@ const setup = (
   dir: string,
   d: number = D,
   c: number = C,
-  dirs: string[] = []
+  dirs: string[] = [],
 ) => {
   if (d === D) sayCreating()
 
@@ -100,12 +102,14 @@ const setup = (
   }
 }
 
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 const dir = resolve(__dirname) + '/fixture'
 process.stdout.write('cleaning fixture...\r')
 // rimrafSync(dir)
 console.log('cleaning fixture...done!')
 
-import { Path, PathScurry } from '../'
+import { Path, PathScurry } from '../dist/esm/index.js'
 
 const fsWalkStream = (done: () => any) => {
   const stream = walkStream(dir)
@@ -448,7 +452,7 @@ const walkFsReaddirAsyncRecurseStack =
     const stack: string[] = []
     const walk = async (p: string) => {
       const entries = await readdir(p, { withFileTypes: true }).catch(
-        () => []
+        () => [],
       )
       for (const entry of entries) {
         if (!check || entry.isDirectory()) {

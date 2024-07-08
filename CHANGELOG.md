@@ -1,5 +1,9 @@
 # churnge loog
 
+## 2.0
+
+- Require node `20` or `>=22`
+
 ## 1.11
 
 - Add `path.isCWD`, correctly report relative paths of entries

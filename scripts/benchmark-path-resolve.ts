@@ -23,7 +23,11 @@ console.log('Testing performance compared with path.resolve()')
 // path resolution process, in which case, don't do that lol.
 
 import { posix } from 'path'
-import { PathBase, PathScurryPosix, PathScurryWin32 } from '../'
+import {
+  PathBase,
+  PathScurryPosix,
+  PathScurryWin32,
+} from '../dist/esm/index.js'
 const posixResolve = posix.resolve
 const win32Resolve = posix.resolve
 
@@ -40,22 +44,22 @@ const mod = '${MOD}'
 
 const replaceRandom = ([s, t]: [s: string, t?: string]): [
   string,
-  string | undefined
+  string | undefined,
 ] =>
-  (s && s.includes('${RANDOM}')) || (t && t.includes('${RANDOM}'))
-    ? [
-        s && s.replace(/\$\{RANDOM\}/, String(Math.random())),
-        t && t.replace(/\$\{RANDOM\}/, String(Math.random())),
-      ]
-    : [s, t]
+  (s && s.includes('${RANDOM}')) || (t && t.includes('${RANDOM}')) ?
+    [
+      s && s.replace(/\$\{RANDOM\}/, String(Math.random())),
+      t && t.replace(/\$\{RANDOM\}/, String(Math.random())),
+    ]
+  : [s, t]
 let modInc = 0
 const replaceMod = ([s, t]: [s: string, t?: string]): [
   string,
-  string | undefined
+  string | undefined,
 ] => {
   modInc = (modInc + 1) % 10
-  return (s && s.includes('${MOD}')) || (t && t.includes('${MOD}'))
-    ? [
+  return (s && s.includes('${MOD}')) || (t && t.includes('${MOD}')) ?
+      [
         s && s.replace(/\$\{MOD\}/, String(modInc)),
         t && t.replace(/\$\{MOD\}/, String(modInc)),
       ]
@@ -64,7 +68,7 @@ const replaceMod = ([s, t]: [s: string, t?: string]): [
 const run = (
   r: (s: string, t?: string) => string | PathBase,
   s: string,
-  t?: string
+  t?: string,
 ) => {
   gc && gc()
   const start = performance.now()
@@ -103,7 +107,7 @@ const cases = [
   [p, mod],
   [mod, abs],
   [abs, mod],
-]
+] as const
 const { format } = new Intl.NumberFormat('en', {
   maximumFractionDigits: 2,
 })
