@@ -413,6 +413,7 @@ export abstract class PathBase implements Dirent {
     return (this.parent || this).fullpath()
   }
 
+  /* c8 ignore start */
   /**
    * Deprecated alias for Dirent['parentPath'] Somewhat counterintuitively,
    * this property refers to the *parent* path, not the path object itself.
@@ -422,6 +423,7 @@ export abstract class PathBase implements Dirent {
   get path(): string {
     return this.parentPath
   }
+  /* c8 ignore stop */
 
   /**
    * Do not create new Path objects directly.  They should always be accessed

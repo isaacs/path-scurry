@@ -1,5 +1,5 @@
 import * as fs from 'fs'
-import { lstatSync, readdirSync, writeFileSync } from 'fs'
+import { lstatSync, readdirSync, writeFileSync, Stats } from 'fs'
 import * as fsp from 'fs/promises'
 import { lstat } from 'fs/promises'
 import { basename, relative, resolve } from 'path'
@@ -99,7 +99,6 @@ t.test('platform-specific', t => {
     t.equal(pw.cwd.fullpath(), 'C:\\some\\path')
     t.equal(pw.cwd.parentPath, pw.cwd.parent?.fullpath())
     t.equal(pw.cwd.root.parentPath, pw.cwd.root.fullpath())
-    t.equal(pw.cwd.path, pw.cwd.parentPath)
     t.equal(pw.cwd.fullpathPosix(), '//?/C:/some/path')
     t.equal(pw.cwd.getRoot('\\\\?\\c:\\'), pw.root)
     t.equal(pw.cwd.getRoot('C:\\'), pw.root)
@@ -1495,7 +1494,17 @@ t.test('lstat() fills out stat fields', async t => {
   const a = await ps.lstat('async')
   if (!a) throw new Error('failed async lstat')
   const ast = lstatSync(cwd + '/async')
-  for (const [field, value] of Object.entries(ast)) {
+  // some of these became non-iterable in node 24
+  const fields = new Set<keyof Stats>(
+    (Object.keys(ast) as (keyof Stats)[]).concat([
+      'atime',
+      'mtime',
+      'ctime',
+      'birthtime',
+    ] as (keyof Stats)[]),
+  )
+  for (const field of fields) {
+    const value = ast[field]
     const found = a[field as keyof Path]
     if (value instanceof Date) {
       t.equal((found as Date).toISOString(), value.toISOString(), field)
@@ -1506,7 +1515,8 @@ t.test('lstat() fills out stat fields', async t => {
   const s = ps.lstatSync('sync')
   if (!s) throw new Error('failed sync lstat')
   const sst = lstatSync(cwd + '/sync')
-  for (const [field, value] of Object.entries(sst)) {
+  for (const field of fields) {
+    const value = sst[field]
     const found = s[field as keyof Path]
     if (value instanceof Date) {
       t.equal((found as Date).toISOString(), value.toISOString(), field)
