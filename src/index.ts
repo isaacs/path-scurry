@@ -174,7 +174,7 @@ const entToType = (s: Dirent | Stats) =>
   : UNKNOWN
 
 // normalize unicode path names
-const normalizeCache = new Map<string, string>()
+const normalizeCache = new LRUCache<string, string>({ max: 2 ** 12 })
 const normalize = (s: string) => {
   const c = normalizeCache.get(s)
   if (c) return c
@@ -183,7 +183,7 @@ const normalize = (s: string) => {
   return n
 }
 
-const normalizeNocaseCache = new Map<string, string>()
+const normalizeNocaseCache = new LRUCache<string, string>({ max: 2 ** 12 })
 const normalizeNocase = (s: string) => {
   const c = normalizeNocaseCache.get(s)
   if (c) return c
