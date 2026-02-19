@@ -12,6 +12,8 @@ on:
       - '*.ts'
       - 'lib/**'
       - 'scripts/**'
+      - '.github/workflows/ci.yml'
+      - 'package.json'
   workflow_dispatch:
 
 permissions:
