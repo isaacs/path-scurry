@@ -35,18 +35,6 @@
     "typedoc": "typedoc --tsconfig tsconfig-esm.json ./src/*.ts",
     "bench": "bash ./scripts/bench.sh"
   },
-  "prettier": {
-    "experimentalTernaries": true,
-    "semi": false,
-    "printWidth": 75,
-    "tabWidth": 2,
-    "useTabs": false,
-    "singleQuote": true,
-    "jsxSingleQuote": false,
-    "bracketSameLine": true,
-    "arrowParens": "avoid",
-    "endOfLine": "lf"
-  },
   "devDependencies": {
     "@nodelib/fs.walk": "^2.0.0",
     "@types/node": "^20.14.10",
@@ -59,11 +47,8 @@
     "typedoc": "^0.26.3",
     "typescript": "^5.5.3"
   },
-  "tap": {
-    "typecheck": true
-  },
   "engines": {
-    "node": "20 || >=22"
+    "node": "18 || 20 || >=22"
   },
   "funding": {
     "url": "https://github.com/sponsors/isaacs"
