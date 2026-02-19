@@ -37,11 +37,11 @@
   },
   "devDependencies": {
     "@nodelib/fs.walk": "^2.0.0",
-    "@types/node": "^20.14.10",
+    "@types/node": "^25.3.0",
     "mkdirp": "^3.0.0",
     "prettier": "^3.3.2",
     "rimraf": "^5.0.8",
-    "tap": "^20.0.3",
+    "tap": "^21.6.1",
     "ts-node": "^10.9.2",
     "tshy": "^2.0.1",
     "typedoc": "^0.26.3",
