@@ -236,7 +236,6 @@ constructor.
 - `fs` An object that will be used to override the default `fs`
   methods. Any methods that are not overridden will use Node's
   built-in implementations.
-
   - lstatSync
   - readdir (callback `withFileTypes` Dirent variant, used for
     readdirCB and most walks)

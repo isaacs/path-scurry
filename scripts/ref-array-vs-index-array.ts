@@ -55,8 +55,8 @@ class ItemTwo {
     this.store = store
   }
   getParent() {
-    return this.parent === undefined
-      ? undefined
+    return this.parent === undefined ?
+        undefined
       : this.store.items[this.parent]
   }
   getChildren() {
@@ -130,7 +130,7 @@ const fill = (
   operation: 'none' | 'iterate' | 'walk',
   count: number,
   width: number,
-  parent: ItemOne | number
+  parent: ItemOne | number,
 ) => {
   //@ts-ignore
   const i = s.addItem(parent)
@@ -177,7 +177,7 @@ const run = (
   Store: typeof StoreOne | typeof StoreTwo | typeof StoreThree,
   operation: 'none' | 'iterate' | 'walk',
   K: number,
-  W: number
+  W: number,
 ) => {
   let count = 0
   const start = performance.now()
@@ -197,7 +197,7 @@ const run = (
 
 const cases: [
   string,
-  typeof StoreOne | typeof StoreTwo | typeof StoreThree
+  typeof StoreOne | typeof StoreTwo | typeof StoreThree,
 ][] = [
   ['item has ref array    ', StoreOne],
   ['store has number array', StoreTwo],
