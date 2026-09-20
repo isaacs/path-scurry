@@ -57,7 +57,7 @@
     "url": "git+https://github.com/isaacs/path-scurry"
   },
   "dependencies": {
-    "lru-cache": "^11.0.0",
+    "lru-cache": "^10.4.3",
     "minipass": "^7.1.2"
   },
   "tshy": {
