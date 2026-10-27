@@ -1,5 +1,10 @@
 # churnge loog
 
+## 3.0
+
+- Make `cwd.resolve('/')` return the drive root of the cwd on
+  Windows, instead of new root named `/`.
+
 ## 2.0
 
 - Require node `20` or `>=22`

@@ -1444,7 +1444,8 @@ export class PathWin32 extends PathBase {
    */
   getRoot(rootPath: string): PathBase {
     rootPath = uncToDrive(rootPath.toUpperCase())
-    if (rootPath === this.root.name) {
+    // a root with no drive or UNC host is the root of this path
+    if (rootPath === this.root.name || /^[\\/]$/.test(rootPath)) {
       return this.root
     }
     // ok, not that one, check if it matches another we know about
