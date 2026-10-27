@@ -110,7 +110,7 @@ const fsFromOption = (fsOption?: FSOption): FSValue =>
       ...fsOption,
       promises: {
         ...defaultFS.promises,
-        ...(fsOption.promises || {}),
+        ...(fsOption.promises),
       },
     }
 
@@ -138,7 +138,7 @@ const longDrivePrefix = /^[\\/]{2}\?[\\/](?=[a-z]:)/i
 const longUncPrefix = /^[\\/]{2}\?[\\/]unc(?=[\\/][^\\/]+[\\/][^\\/])/i
 
 // windows paths are separated by either / or \
-const eitherSep = /[\\\/]/
+const eitherSep = /[\\/]/
 
 const UNKNOWN = 0 // may not even exist, for all we know
 const IFIFO = 0b0001
@@ -474,6 +474,16 @@ export abstract class PathBase implements Dirent {
     } else {
       this.#fs = fsFromOption(opts.fs)
     }
+  }
+
+  /**
+   * The file system methods that this Path uses, for a new root on
+   * another drive or UNC share.
+   *
+   * @internal
+   */
+  get fs(): FSOption {
+    return this.#fs
   }
 
   /**
@@ -1351,7 +1361,7 @@ export abstract class PathBase implements Dirent {
     try {
       const rp = await this.#fs.promises.realpath(this.fullpath())
       return (this.#realpath = this.resolve(rp))
-    } catch (_) {
+    } catch {
       this.#markENOREALPATH()
     }
   }
@@ -1365,7 +1375,7 @@ export abstract class PathBase implements Dirent {
     try {
       const rp = this.#fs.realpathSync(this.fullpath())
       return (this.#realpath = this.resolve(rp))
-    } catch (_) {
+    } catch {
       this.#markENOREALPATH()
     }
   }
@@ -1473,10 +1483,10 @@ export class PathWin32 extends PathBase {
       }
     }
     // otherwise, have to create a new one.
-    return (this.roots[rootPath] = new PathScurryWin32(
-      rootPath,
-      this,
-    ).root)
+    return (this.roots[rootPath] = new PathScurryWin32(rootPath, {
+      nocase: this.nocase,
+      fs: this.fs,
+    }).root)
   }
 
   /**

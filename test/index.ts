@@ -1600,6 +1600,25 @@ t.test('custom FS override option', async t => {
   t.equal(calledLstatSync, 2)
 })
 
+t.test('new windows roots use the same fs', async t => {
+  const seen: string[] = []
+  const lstatSync = (p: string) => {
+    seen.push(p)
+    return lstatSync_(process.cwd())
+  }
+  const lstatSync_ = fs.lstatSync
+  const pw = new PathScurryWin32('C:\\a', { fs: { lstatSync } })
+  for (const p of ['D:\\x', '\\\\host\\share\\y']) {
+    const r = pw.cwd.resolve(p)
+    t.not(r.root, pw.root)
+    r.lstatSync()
+  }
+  t.strictSame(seen, ['D:\\x', '\\\\HOST\\SHARE\\y'])
+  t.equal(pw.cwd.resolve('D:\\x').root.nocase, true)
+  const pc = new PathScurryWin32('C:\\a', { nocase: false })
+  t.equal(pc.cwd.resolve('D:\\x').root.nocase, false)
+})
+
 t.test('chdir', async t => {
   const ps = new PathScurry()
   const oldCwd = ps.cwd

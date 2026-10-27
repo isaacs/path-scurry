@@ -8,6 +8,9 @@
   Path as `//host/share/x`, and `//?/c:/x` is the same as `c:/x`,
   for `resolve()` and for the `cwd`. So `fullpath()` returns the
   short form. `//host/share` is the same root as `//host/share/`.
+- On Windows, a new root for another drive or UNC share uses the
+  same `fs` methods as the rest of the PathScurry, instead of the
+  default `fs`.
 
 ## 2.0
 
