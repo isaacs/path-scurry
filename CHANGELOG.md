@@ -4,6 +4,10 @@
 
 - Make `cwd.resolve('/')` return the drive root of the cwd on
   Windows, instead of new root named `/`.
+- On Windows, long paths like `//?/UNC/host/share/x` are the same
+  Path as `//host/share/x`, and `//?/c:/x` is the same as `c:/x`,
+  for `resolve()` and for the `cwd`. So `fullpath()` returns the
+  short form. `//host/share` is the same root as `//host/share/`.
 
 ## 2.0
 

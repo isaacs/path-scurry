@@ -114,10 +114,28 @@ const fsFromOption = (fsOption?: FSOption): FSValue =>
       },
     }
 
-// turn something like //?/c:/ into c:\
+// turn something like //?/c:/ into c:\, and //?/UNC/host/share/ or
+// //host/share into \\host\share\
 const uncDriveRegexp = /^\\\\\?\\([a-z]:)\\?$/i
+const uncLongRegexp = /^\\\\\?\\UNC\\([^\\]+\\[^\\]+)\\?$/i
+const uncShareRegexp = /^\\\\[^\\?]+\\[^\\]+$/
 const uncToDrive = (rootPath: string): string =>
-  rootPath.replace(/\//g, '\\').replace(uncDriveRegexp, '$1\\')
+  rootPath
+    .replace(/\//g, '\\')
+    .replace(uncDriveRegexp, '$1\\')
+    .replace(uncLongRegexp, '\\\\$1\\')
+    .replace(uncShareRegexp, '$&\\')
+
+// path.win32.parse() only finds the //?/UNC/ of a long UNC root
+const longUncRoot =
+  /^[\\/]{2}\?[\\/]unc[\\/][^\\/]+[\\/][^\\/]+(?:[\\/]|$)/i
+
+// //?/c:/x is the same path as c:/x
+const longDrivePrefix = /^[\\/]{2}\?[\\/](?=[a-z]:)/i
+// //?/UNC/host/share/x is the same path as //host/share/x. This
+// matches up to the / after UNC, which with a \ in front of it is
+// the // in front of the host.
+const longUncPrefix = /^[\\/]{2}\?[\\/]unc(?=[\\/][^\\/]+[\\/][^\\/])/i
 
 // windows paths are separated by either / or \
 const eitherSep = /[\\\/]/
@@ -1436,7 +1454,7 @@ export class PathWin32 extends PathBase {
    * @internal
    */
   getRootString(path: string): string {
-    return win32.parse(path).root
+    return longUncRoot.exec(path)?.[0] ?? win32.parse(path).root
   }
 
   /**
@@ -1468,11 +1486,7 @@ export class PathWin32 extends PathBase {
     // windows can (rarely) have case-sensitive filesystem, but
     // UNC and drive letters are always case-insensitive, and canonically
     // represented uppercase.
-    rootPath = rootPath
-      .toUpperCase()
-      .replace(/\//g, '\\')
-      .replace(uncDriveRegexp, '$1\\')
-    return rootPath === compare
+    return uncToDrive(rootPath.toUpperCase()) === compare
   }
 }
 
@@ -2698,6 +2712,10 @@ export class PathScurryWin32 extends PathScurryBase {
     opts: PathScurryOpts = {},
   ) {
     const { nocase = true } = opts
+    // use the same root as resolve() does for these paths
+    if (typeof cwd === 'string' && !cwd.startsWith('file://')) {
+      cwd = cwd.replace(longDrivePrefix, '').replace(longUncPrefix, '\\')
+    }
     super(cwd, win32, '\\', { ...opts, nocase })
     this.nocase = nocase
     for (let p: PathBase | undefined = this.cwd; p; p = p.parent) {

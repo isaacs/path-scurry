@@ -104,6 +104,29 @@ t.test('platform-specific', t => {
     t.equal(pw.cwd.getRoot('C:\\'), pw.root)
     t.equal(pw.resolve('/'), 'C:\\')
     t.equal(pw.cwd.resolve('/'), pw.root)
+    // long UNC paths are the same as short ones
+    const unc = pw.cwd.resolve('//host/share/x')
+    t.equal(unc.fullpath(), '\\\\HOST\\SHARE\\x')
+    t.equal(pw.cwd.resolve('\\\\?\\UNC\\host\\share\\x'), unc)
+    t.equal(pw.cwd.resolve('//?/unc/Host/SHARE/x'), unc)
+    t.equal(
+      pw.cwd.resolve('//?/UNC/host/share/a/../../x'),
+      unc.parent?.child('x'),
+    )
+    t.equal(pw.cwd.resolve('\\\\host\\share'), unc.root)
+    t.equal(pw.cwd.resolve('//?/UNC/host/share'), unc.root)
+    t.equal(pw.cwd.resolve('//?/c:/x'), pw.root.child('x'))
+    for (const cwd of [
+      '\\\\?\\UNC\\host\\share\\a',
+      '//?/unc/host/share/a',
+    ]) {
+      const pl = new PathScurry(cwd)
+      t.equal(pl.cwd.fullpath(), '\\\\HOST\\SHARE\\a')
+      t.equal(pl.cwd.resolve('//host/share/a'), pl.cwd)
+    }
+    const pd = new PathScurry('\\\\?\\C:\\a')
+    t.equal(pd.cwd.fullpath(), 'C:\\a')
+    t.equal(pd.cwd.resolve('C:/a'), pd.cwd)
     t.equal(pw.cwd.resolve('\\a'), pw.root.child('a'))
     const d = pw.cwd.resolve('d:/x')
     t.equal(d.resolve('/y').fullpath(), 'D:\\y')
