@@ -1713,3 +1713,45 @@ t.test('link targets in multiply nested symlinks', async t => {
     t.end()
   })
 })
+
+t.test('walk rejects predicate errors', async t => {
+  const td = t.testdir({
+    direct: '',
+    nested: { file: '' },
+    links: { linked: t.fixture('symlink', '../nested') },
+  })
+  for (const name of ['direct', 'nested', 'file']) {
+    const error = new Error(`filter failed at ${name}`)
+    await t.rejects(
+      new PathScurry(td).walk({
+        filter: entry => {
+          if (entry.name === name) throw error
+          return true
+        },
+      }),
+      error,
+    )
+  }
+  for (const follow of [false, true]) {
+    const error = new Error('walkFilter failed')
+    await t.rejects(
+      new PathScurry(td).walk({
+        follow,
+        walkFilter: () => {
+          throw error
+        },
+      }),
+      error,
+    )
+  }
+  const linkError = new Error('walkFilter failed on link target')
+  await t.rejects(
+    new PathScurry(td + '/links').walk({
+      follow: true,
+      walkFilter: () => {
+        throw linkError
+      },
+    }),
+    linkError,
+  )
+})
