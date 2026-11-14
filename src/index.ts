@@ -110,7 +110,7 @@ const fsFromOption = (fsOption?: FSOption): FSValue =>
       ...fsOption,
       promises: {
         ...defaultFS.promises,
-        ...(fsOption.promises),
+        ...fsOption.promises,
       },
     }
 
@@ -2189,35 +2189,41 @@ export abstract class PathScurryBase {
     ) => {
       dirs.add(dir)
       dir.readdirCB((er, entries) => {
-        /* c8 ignore start */
-        if (er) {
-          return cb(er)
-        }
-        /* c8 ignore stop */
-        let len = entries.length
-        if (!len) return cb()
-        const next = () => {
-          if (--len === 0) {
-            cb()
+        try {
+          /* c8 ignore start */
+          if (er) {
+            return cb(er)
           }
-        }
-        for (const e of entries) {
-          if (!filter || filter(e)) {
-            results.push(withFileTypes ? e : e.fullpath())
-          }
-          if (follow && e.isSymbolicLink()) {
-            e.realpath()
-              .then(r => (r?.isUnknown() ? r.lstat() : r))
-              .then(r =>
-                r?.shouldWalk(dirs, walkFilter) ? walk(r, next) : next(),
-              )
-          } else {
-            if (e.shouldWalk(dirs, walkFilter)) {
-              walk(e, next)
-            } else {
-              next()
+          /* c8 ignore stop */
+          let len = entries.length
+          if (!len) return cb()
+          const next = (er?: NodeJS.ErrnoException) => {
+            if (er) return cb(er)
+            if (--len === 0) {
+              cb()
             }
           }
+          for (const e of entries) {
+            if (!filter || filter(e)) {
+              results.push(withFileTypes ? e : e.fullpath())
+            }
+            if (follow && e.isSymbolicLink()) {
+              e.realpath()
+                .then(r => (r?.isUnknown() ? r.lstat() : r))
+                .then(r =>
+                  r?.shouldWalk(dirs, walkFilter) ? walk(r, next) : next(),
+                )
+                .catch(next)
+            } else {
+              if (e.shouldWalk(dirs, walkFilter)) {
+                walk(e, next)
+              } else {
+                next()
+              }
+            }
+          }
+        } catch (er) {
+          cb(er as NodeJS.ErrnoException)
         }
       }, true) // zalgooooooo
     }
